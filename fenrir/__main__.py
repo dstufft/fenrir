@@ -18,13 +18,14 @@ from fenrir.server import Server
 
 def main(argv):
     parser = argparse.ArgumentParser(prog="fenrir")
+    parser.add_argument("-b", action="append", dest="bind")
     parser.add_argument("app")
 
     # Parse our options from the command line
     options = parser.parse_args(argv)
 
     # Create a server instance from our options
-    server = Server(options.app)
+    server = Server(options.app, bind=options.bind)
 
     # Finally, spawn our server
     server.spawn()
