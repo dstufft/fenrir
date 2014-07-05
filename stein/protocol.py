@@ -97,10 +97,17 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
 
         # Write out the headers, taking special care to ensure that any
         # mandatory headers are added.
-        # TODO: How do we handle multi value headers like Set-Cookie?
         # TODO: We need to handle some required headers
-        for key, value in resp_headers.items():
-            writer.write(key + b": " + value + b"\r\n")
+        for key, values in resp_headers.items():
+            # In order to handle headers which need to have multiple values
+            # like Set-Cookie, we allow the value of the header to be an
+            # iterable instead of a bytes object, in which case we'll write
+            # multiple header lines for this header.
+            if isinstance(values, (bytes, bytearray)):
+                values = [values]
+
+            for value in values:
+                writer.write(key + b": " + value + b"\r\n")
 
         # Before we get to the body, we need to write a blank line to separate
         # the headers and the response body

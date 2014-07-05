@@ -25,7 +25,11 @@ def echo(data):
 def echo_app(headers, reader):
     data = yield from reader.read()
 
-    return b"200 OK", {b"Is-Demo": b"Yes!"}, [echo(data)]
+    return (
+        b"200 OK",
+        {b"Is-Demo": b"Yes!", b"Multi-Value": [b"One", b"Two"]},
+        [echo(data)],
+    )
 
 
 def main(loop=None):
