@@ -22,8 +22,8 @@ def echo(data):
 
 
 @asyncio.coroutine
-def echo_app(headers, reader):
-    data = yield from reader.read()
+def echo_app(headers, body):
+    data = yield from body.read()
 
     return (
         b"200 OK",
