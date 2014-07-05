@@ -28,8 +28,7 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
         self._stream_writer = None
 
         self._callback = callback
-
-        self._headers_parsed = False
+        self._task = None
 
     def connection_made(self, transport):
         self._parser = HttpParser()
@@ -56,14 +55,13 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
 
         # If we have not already handled the headers and we've gotten all of
         # them, then invoke the callback with the headers in them.
-        if not self._headers_parsed and self._parser.is_headers_complete():
-            self._headers_parsed = True
+        if self._task is None and self._parser.is_headers_complete():
             coro = self.dispatch(
                 self._parser.get_headers(),
                 self._stream_reader,
                 self._stream_writer,
             )
-            asyncio.Task(coro, loop=self._loop)
+            self._task = asyncio.Task(coro, loop=self._loop)
 
         # Determine if we have any data in the body buffer and if so feed it
         # to our StreamReader
