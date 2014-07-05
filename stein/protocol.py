@@ -66,9 +66,7 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
         # Determine if we have any data in the body buffer and if so feed it
         # to our StreamReader
         if self._parser.is_partial_body():
-            d = self._parser.recv_body()
-            # self._stream_reader.feed_data(self._parser.recv_body())
-            self._stream_reader.feed_data(d)
+            self._stream_reader.feed_data(self._parser.recv_body())
 
         # Determine if we've completed the end of the HTTP request, if we have
         # then we should close our stream reader because there is nothing more
