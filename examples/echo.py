@@ -12,7 +12,7 @@
 
 import asyncio
 
-from stein.protocol import HTTPServer
+from fenrir.protocol import HTTPServer
 
 
 @asyncio.coroutine

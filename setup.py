@@ -15,7 +15,7 @@ from setuptools import setup, find_packages
 
 
 meta = {}
-with open("stein/__init__.py") as fp:
+with open("fenrir/__init__.py") as fp:
     exec(fp.read(), meta)
 
 

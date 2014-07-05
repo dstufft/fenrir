@@ -10,10 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-__title__ = "Stein"
+__title__ = "Fenrir"
 __version__ = "0.1.0"
-__summary__ = "Stein is an asynchronous HTTP server and web framework"
+__summary__ = "Fenrir is an asynchronous HTTP server for Python"
 __license__ = "Apache License, Version 2.0"
-__url__ = "https://github.com/dstufft/stein/"
+__url__ = "https://github.com/dstufft/fenrir/"
 __author__ = "Donald Stufft"
 __email__ = "donald@stufft.io"
