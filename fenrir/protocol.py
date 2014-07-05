@@ -106,8 +106,7 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
         )
 
         # Write out the status line to the client for this request
-        # TODO: We probably don't want to hard code HTTP/1.1 here
-        response.write(b"HTTP/1.1 " + status + b"\r\n")
+        response.write(request["protocol"] + b" " + status + b"\r\n")
 
         # Write out the headers, taking special care to ensure that any
         # mandatory headers are added.
