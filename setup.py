@@ -46,6 +46,7 @@ setup(
     packages=find_packages(),
 
     install_requires=[
+        "http-parser",
     ],
 
     zip_safe=False,
