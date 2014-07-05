@@ -30,6 +30,8 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
         self._callback = callback
         self._task = None
 
+        self._server = None
+
     def connection_made(self, transport):
         self._parser = HttpParser()
 
@@ -40,6 +42,9 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
             self._stream_reader,
             self._loop,
         )
+
+        # Grab the name of our socket if we have it
+        self._server = transport.get_extra_info("sockname")
 
     def connection_lost(self, exc):
         if exc is None:
@@ -57,7 +62,14 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
         # them, then invoke the callback with the headers in them.
         if self._task is None and self._parser.is_headers_complete():
             coro = self.dispatch(
-                self._parser.get_headers(),
+                {
+                    "server": self._server,
+                    "protocol": self._parser.get_version(),
+                    "method": self._parser.get_method(),
+                    "path": self._parser.get_path(),
+                    "query": self._parser.get_query_string(),
+                    "headers": self._parser.get_headers(),
+                },
                 self._stream_reader,
                 self._stream_writer,
             )
@@ -80,13 +92,13 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
         self._stream_reader.feed_eof()
 
     @asyncio.coroutine
-    def dispatch(self, headers, request_body, response):
+    def dispatch(self, request, request_body, response):
         # Get the status, headers, and body from the callback. The body must
         # be iterable, and each item can either be a bytes object, or an
         # asyncio coroutine, in which case we'll ``yield from`` on it to wait
         # for it's value.
         status, resp_headers, body = yield from self._callback(
-            headers,
+            request,
             request_body,
         )
 

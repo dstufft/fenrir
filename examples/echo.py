@@ -22,7 +22,7 @@ def echo(data):
 
 
 @asyncio.coroutine
-def echo_app(headers, body):
+def echo_app(request, body):
     data = yield from body.read()
 
     return (
