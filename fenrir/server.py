@@ -9,29 +9,24 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""
-An example application which simply will simply echo everything sent to it.
-
-This can be run using:
-
-    PYTHONPATH=examples python -m fenrir echo:app
-"""
 
 import asyncio
 
-
-@asyncio.coroutine
-def echo(data):
-    yield from asyncio.sleep(2)
-    return data
+from fenrir.protocol import HTTPServer
+from fenrir.utils import resolve_app
 
 
-@asyncio.coroutine
-def app(request, body):
-    data = yield from body.read()
+class Server:
 
-    return (
-        b"200 OK",
-        {b"Is-Demo": b"Yes!", b"Multi-Value": [b"One", b"Two"]},
-        [echo(data)],
-    )
+    def __init__(self, app):
+        if isinstance(app, str):
+            app = resolve_app(app)
+
+        self.app = app
+
+    def spawn(self):
+        loop = asyncio.get_event_loop()
+        server = loop.run_until_complete(
+            loop.create_server(HTTPServer(self.app), port=5000),
+        )
+        loop.run_until_complete(server.wait_closed())
