@@ -80,16 +80,19 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
         self._stream_reader.feed_eof()
 
     @asyncio.coroutine
-    def dispatch(self, headers, reader, writer):
+    def dispatch(self, headers, request_body, response):
         # Get the status, headers, and body from the callback. The body must
         # be iterable, and each item can either be a bytes object, or an
         # asyncio coroutine, in which case we'll ``yield from`` on it to wait
         # for it's value.
-        status, resp_headers, body = yield from self._callback(headers, reader)
+        status, resp_headers, body = yield from self._callback(
+            headers,
+            request_body,
+        )
 
         # Write out the status line to the client for this request
         # TODO: We probably don't want to hard code HTTP/1.1 here
-        writer.write(b"HTTP/1.1 " + status + b"\r\n")
+        response.write(b"HTTP/1.1 " + status + b"\r\n")
 
         # Write out the headers, taking special care to ensure that any
         # mandatory headers are added.
@@ -103,11 +106,11 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
                 values = [values]
 
             for value in values:
-                writer.write(key + b": " + value + b"\r\n")
+                response.write(key + b": " + value + b"\r\n")
 
         # Before we get to the body, we need to write a blank line to separate
         # the headers and the response body
-        writer.write(b"\r\n")
+        response.write(b"\r\n")
 
         for chunk in body:
             # If the chunk is a coroutine, then we want to wait for the result
@@ -116,11 +119,11 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
                 chunk = yield from chunk
 
             # Write our chunk out to the connect client
-            writer.write(chunk)
+            response.write(chunk)
 
         # We've written everything in our iterator, so we want to close the
         # connection.
-        writer.close()
+        response.close()
 
 
 class HTTPServer:
