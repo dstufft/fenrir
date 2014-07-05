@@ -22,7 +22,6 @@ import asyncio
 
 @asyncio.coroutine
 def echo(data):
-    yield from asyncio.sleep(2)
     return data
 
 
