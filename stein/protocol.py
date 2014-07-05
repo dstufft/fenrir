@@ -68,9 +68,9 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
                         str(x).encode("ascii")
                         for x in self._parser.get_version()
                     ),
-                    "method": self._parser.get_method(),
-                    "path": self._parser.get_path(),
-                    "query": self._parser.get_query_string(),
+                    "method": self._parser.get_method().encode("latin1"),
+                    "path": self._parser.get_path().encode("latin1"),
+                    "query": self._parser.get_query_string().encode("latin1"),
                     "headers": self._parser.get_headers(),
                 },
                 self._stream_reader,
