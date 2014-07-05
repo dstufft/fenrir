@@ -64,7 +64,10 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
             coro = self.dispatch(
                 {
                     "server": self._server,
-                    "protocol": self._parser.get_version(),
+                    "protocol": b"HTTP/" + b".".join(
+                        str(x).encode("ascii")
+                        for x in self._parser.get_version()
+                    ),
                     "method": self._parser.get_method(),
                     "path": self._parser.get_path(),
                     "query": self._parser.get_query_string(),
