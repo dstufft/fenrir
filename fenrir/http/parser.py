@@ -26,8 +26,8 @@ class HTTPParser:
         self.query = None
         self.headers = {}  # TODO: We need this to be a different structure
         self.headers_complete = False
-        self.completed = False
         self._buffer = None
+        self._buffer_pos = 0
 
         # Create a http_parser struct so to act as a bag of data to store
         # information about what we're parsing into
@@ -53,6 +53,13 @@ class HTTPParser:
         self._parser.request_path = self._cb_request_path
         self._parser.query_string = self._cb_query_string
         self._parser.http_field = self._cb_http_field
+
+    @property
+    def completed(self):
+        return (self.headers_complete
+                and (not int(self.headers.get(b"Content-Length", 0))
+                     or (self._buffer is not None
+                         and self._buffer.writepos >= self._buffer.capacity)))
 
     def _cb_http_version(self, data, at, length):
         # Will this always be NULL? I have no idea about it seems to be, so
@@ -111,33 +118,20 @@ class HTTPParser:
     def recv_body(self):
         # We only want to create a view and return any data if we have a buffer
         # and it has some data, otherwise we'll just return a b""
-        if self._buffer is not None and self._buffer.writepos:
-            # Make our buffer a view, this will allow the calling code to treat
-            # it more like a bytes object.
-            view = self._buffer.view()
+        if self._buffer is not None:
+            # Make a view to our buffer, starting from the last place we read
+            # from, this will enable us to return a view that contains only the
+            # data that we have not yet returned.
+            view = self._buffer.view(self._buffer_pos)
 
-            # Figure out how much of the body is left that we haven't already
-            # added to the buffer
-            left = self._buffer.capacity - self._buffer.writepos
-
-            # Figure out if we have any data left to be received, if so we'll
-            # create a new, smaller buffer which will be equal to the size of
-            # our expected body minus what we've already added to the buffer.
-            # This will allow our buffer to grow increasingly smaller as things
-            # are read off it.
-            if left:
-                # TODO: Figure out if this is a good idea, or if it'd be better
-                #       to make smaller buffers that we collate into, or if
-                #       it'd be better to track how much we've pulled off the
-                #       buffer and just return a partial view.
-                self._buffer = zero_buffer.Buffer.allocate(left)
-            else:
-                # We have no content left to pull off the buffer, so we'll
-                # just mark this parser as complete and be done with it.
-                self.completed = True
+            # Advance our buffer position to the high water mark of the buffer
+            self._buffer_pos = self._buffer.writepos
 
             return view
         else:
+            # TODO: Should we return a zero_buffer.BufferView here? If so where
+            #       should it come from, we don't actually have a BufferView
+            #       yet?
             return b""
 
     def execute(self, data, length=None, offset=0):
