@@ -58,7 +58,6 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
         # Schedule our two coroutines which will handle processing incoming
         # data, dispatching it to the underlying application, and then writing
         # the data back out to the transport.
-        # TODO: Do I want these to be asyncio.async or asyncio.Task?
         asyncio.async(self.process_data(self._reader, req_q), loop=self._loop)
         asyncio.async(
             self.process_responses(self._writer, req_q),
