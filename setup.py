@@ -11,7 +11,45 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from distutils.command.build import build
+
 from setuptools import setup, find_packages
+from setuptools.command.install import install
+
+
+CFFI_DEPENDENCY = "cffi>=0.8"
+
+
+def get_ext_modules():
+    from fenrir.http import c
+    return [c.ffi.verifier.get_extension()]
+
+
+class CFFIBuild(build):
+    """
+    This class exists, instead of just providing ``ext_modules=[...]`` directly
+    in ``setup()`` because importing cryptography requires we have several
+    packages installed first.
+
+    By doing the imports here we ensure that packages listed in
+    ``setup_requires`` are already installed.
+    """
+
+    def finalize_options(self):
+        self.distribution.ext_modules = get_ext_modules()
+        build.finalize_options(self)
+
+
+class CFFIInstall(install):
+    """
+    As a consequence of CFFIBuild and it's late addition of ext_modules, we
+    need the equivalent for the ``install`` command to install into platlib
+    install-dir rather than purelib.
+    """
+
+    def finalize_options(self):
+        self.distribution.ext_modules = get_ext_modules()
+        install.finalize_options(self)
 
 
 meta = {}
@@ -46,8 +84,18 @@ setup(
     packages=find_packages(),
 
     install_requires=[
-        "http-parser",
+        CFFI_DEPENDENCY,
     ],
 
+    setup_requires=[
+        CFFI_DEPENDENCY,
+    ],
+
+    # These are needed so that CFFI can correctly function
     zip_safe=False,
+    ext_package="fenrir",
+    cmdclass={
+        "build": CFFIBuild,
+        "install": CFFIInstall,
+    }
 )
