@@ -81,7 +81,8 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
     @asyncio.coroutine
     def process_data(self, reader, requests):
         try:
-            while not reader.at_eof():
+            final_request = False
+            while not reader.at_eof() and not final_request:
                 request = Request(body=asyncio.StreamReader(loop=self._loop))
                 request_queued = False
 
@@ -97,6 +98,17 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
                     # item to our request queue so that our writer coroutine
                     # can pull them off and write the responses
                     if not request_queued and request.headers_complete:
+                        # Determine if we need to stop processing requests on
+                        # this connection because the client either doesn't
+                        # support HTTP/1.1 or has signaled to use that they are
+                        # closing the connection after this request/response.
+                        # TODO: We need to parse this so that we support
+                        #       multiple connection options.
+                        if (request.http_version == b"HTTP/1.0"
+                            or request.headers.get(b"Connection", None)
+                                == b"close"):
+                            final_request = True
+
                         request_queued = True
                         yield from requests.put(request)
 
@@ -138,6 +150,11 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
 
                 # Write out the status line to the client for this request
                 writer.write(request.http_version + b" " + status + b"\r\n")
+
+                # If this is our last request (e.g. the queue is closed and
+                # empty), then we want to add a Connection: close header.
+                if requests.closed and requests.empty():
+                    writer.write(b"Connection: close\r\n")
 
                 # Write out the headers, taking special care to ensure that any
                 # mandatory headers are added.
