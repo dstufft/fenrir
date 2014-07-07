@@ -131,7 +131,7 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
     def process_responses(self, writer, requests):
         # TODO: How do we know when we need to close the connection?
         try:
-            while not requests.closed and not requests.empty():
+            while not requests.closed or not requests.empty():
                 # Get the next request off the queue, blocking until one is
                 # available.
                 try:
