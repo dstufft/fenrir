@@ -11,6 +11,7 @@
 # limitations under the License.
 
 import binascii
+import functools
 import os.path
 import sys
 
@@ -81,6 +82,21 @@ def _create_modulename(cdef_source, source, sys_version):
 # Build our FFI instance
 ffi = FFI()
 ffi.cdef(CDEF)
+
+# We'll create a few partial functions here which can be used to register some
+# callbacks that we'll need later
+element_cb = functools.partial(
+    ffi.callback,
+    "void(void *data, const char *at, size_t length)",
+)
+
+field_cb = functools.partial(
+    ffi.callback,
+    (
+        "void(void *data, const char *field, size_t flen, const char *value, "
+        "size_t vlen)"
+    ),
+)
 
 
 # We need to locate our sources, we have embedded the http parser from mongrel2

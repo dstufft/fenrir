@@ -85,6 +85,7 @@ setup(
 
     install_requires=[
         CFFI_DEPENDENCY,
+        "zero_buffer",
     ],
 
     setup_requires=[

@@ -14,10 +14,7 @@ import asyncio
 
 from asyncio.streams import FlowControlMixin
 
-try:
-    from http_parser.parser import HttpParser
-except ImportError:
-    from http_parser.pyparser import HttpParser
+from fenrir.http.parser import HTTPParser
 
 
 class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
@@ -33,7 +30,7 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
         self._server = None
 
     def connection_made(self, transport):
-        self._parser = HttpParser()
+        self._parser = HTTPParser()
 
         self._stream_reader.set_transport(transport)
         self._stream_writer = asyncio.StreamWriter(
@@ -56,22 +53,19 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
 
     def data_received(self, data):
         # Parse our incoming data with our HTTP parser
-        self._parser.execute(data, len(data))
+        self._parser.execute(data)
 
         # If we have not already handled the headers and we've gotten all of
         # them, then invoke the callback with the headers in them.
-        if self._task is None and self._parser.is_headers_complete():
+        if self._task is None and self._parser.headers_complete:
             coro = self.dispatch(
                 {
                     "server": self._server,
-                    "protocol": b"HTTP/" + b".".join(
-                        str(x).encode("ascii")
-                        for x in self._parser.get_version()
-                    ),
-                    "method": self._parser.get_method().encode("latin1"),
-                    "path": self._parser.get_path().encode("latin1"),
-                    "query": self._parser.get_query_string().encode("latin1"),
-                    "headers": self._parser.get_headers(),
+                    "protocol": self._parser.http_version,
+                    "method": self._parser.method,
+                    "path": self._parser.path,
+                    "query": self._parser.query,
+                    "headers": self._parser.headers,
                 },
                 self._stream_reader,
                 self._stream_writer,
@@ -80,13 +74,13 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
 
         # Determine if we have any data in the body buffer and if so feed it
         # to our StreamReader
-        if self._parser.is_partial_body():
-            self._stream_reader.feed_data(self._parser.recv_body())
+        # Add any data that we have in the body buffer to our StreamReader
+        self._stream_reader.feed_data(self._parser.recv_body())
 
         # Determine if we've completed the end of the HTTP request, if we have
         # then we should close our stream reader because there is nothing more
         # to read.
-        if self._parser.is_message_complete():
+        if self._parser.completed:
             self._stream_reader.feed_eof()
 
     def eof_received(self):
