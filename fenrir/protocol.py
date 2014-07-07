@@ -14,124 +14,167 @@ import asyncio
 
 from asyncio.streams import FlowControlMixin
 
-from fenrir.http.parser import HTTPParser
+from fenrir.http import Request
+from fenrir.queues import CloseableQueue
 
 
 class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
 
-    def __init__(self, stream_reader, callback, loop=None):
+    def __init__(self, callback, loop=None):
         super().__init__(loop=loop)
-        self._stream_reader = stream_reader
-        self._stream_writer = None
+        self._writer = None
+        self._reader = None
 
         self._callback = callback
-        self._task = None
 
         self._server = None
 
     def connection_made(self, transport):
-        self._parser = HTTPParser()
+        # Stash our transport so we can use it later.
+        self._transport = transport
 
-        self._stream_reader.set_transport(transport)
-        self._stream_writer = asyncio.StreamWriter(
-            transport,
-            self,
-            self._stream_reader,
-            self._loop,
+        # Create a reader which we'll use to handle reading from our stream,
+        # this will help us handle applying back pressure to prevent us from
+        # filling our queues too much.
+        self._reader = asyncio.StreamReader(loop=self._loop)
+        self._reader.set_transport(self._transport)
+
+        # Create a writer which we'll use to handle writing to our stream, this
+        # will help us handle applying back pressure to prevent us from filling
+        # our queues too much.
+        self._writer = asyncio.StreamWriter(
+            self._transport, self, self._reader, self._loop,
         )
 
         # Grab the name of our socket if we have it
-        self._server = transport.get_extra_info("sockname")
+        self._server = self._transport.get_extra_info("sockname")
+
+        # Create a FIFO queue to hold all of our requests as we process them
+        # TODO: Is there a maximum size we want this queue to be? The
+        #       data_recieved event can block waiting for an empty spot in the
+        #       queue.
+        req_q = CloseableQueue(loop=self._loop)
+
+        # Schedule our two coroutines which will handle processing incoming
+        # data, dispatching it to the underlying application, and then writing
+        # the data back out to the transport.
+        # TODO: Do I want these to be asyncio.async or asyncio.Task?
+        asyncio.async(self.process_data(self._reader, req_q), loop=self._loop)
+        asyncio.async(
+            self.process_responses(self._writer, req_q),
+            loop=self._loop,
+        )
 
     def connection_lost(self, exc):
         if exc is None:
-            self._stream_reader.feed_eof()
+            self._reader.feed_eof()
         else:
-            self._stream_reader.set_exception(exc)
+            self._reader.set_exception(exc)
 
         super().connection_lost(exc)
 
     def data_received(self, data):
-        # Parse our incoming data with our HTTP parser
-        self._parser.execute(data)
-
-        # If we have not already handled the headers and we've gotten all of
-        # them, then invoke the callback with the headers in them.
-        if self._task is None and self._parser.headers_complete:
-            coro = self.dispatch(
-                {
-                    "server": self._server,
-                    "protocol": self._parser.http_version,
-                    "method": self._parser.method,
-                    "path": self._parser.path,
-                    "query": self._parser.query,
-                    "headers": self._parser.headers,
-                },
-                self._stream_reader,
-                self._stream_writer,
-            )
-            self._task = asyncio.Task(coro, loop=self._loop)
-
-        # Determine if we have any data in the body buffer and if so feed it
-        # to our StreamReader
-        # Add any data that we have in the body buffer to our StreamReader
-        self._stream_reader.feed_data(self._parser.recv_body())
-
-        # Determine if we've completed the end of the HTTP request, if we have
-        # then we should close our stream reader because there is nothing more
-        # to read.
-        if self._parser.completed:
-            self._stream_reader.feed_eof()
+        self._reader.feed_data(data)
 
     def eof_received(self):
-        # We've gotten an EOF from the client, so we'll propagate this to our
-        # StreamReader
-        self._stream_reader.feed_eof()
+        self._reader.feed_eof()
 
     @asyncio.coroutine
-    def dispatch(self, request, request_body, response):
-        # Get the status, headers, and body from the callback. The body must
-        # be iterable, and each item can either be a bytes object, or an
-        # asyncio coroutine, in which case we'll ``yield from`` on it to wait
-        # for it's value.
-        status, resp_headers, body = yield from self._callback(
-            request,
-            request_body,
-        )
+    def process_data(self, reader, requests):
+        try:
+            while not reader.at_eof():
+                request = Request(body=asyncio.StreamReader(loop=self._loop))
+                request_queued = False
 
-        # Write out the status line to the client for this request
-        response.write(request["protocol"] + b" " + status + b"\r\n")
+                while (not request.received
+                        and not (reader.at_eof()
+                                 and not request.headers_complete)):
+                    # TODO: What is the best size chunk to read here? What will
+                    #       happen if there isn't enough data in the buffer to
+                    #       read all of the data we've requested?
+                    request.add_bytes((yield from reader.read(4096)))
 
-        # Write out the headers, taking special care to ensure that any
-        # mandatory headers are added.
-        # TODO: We need to handle some required headers
-        for key, values in resp_headers.items():
-            # In order to handle headers which need to have multiple values
-            # like Set-Cookie, we allow the value of the header to be an
-            # iterable instead of a bytes object, in which case we'll write
-            # multiple header lines for this header.
-            if isinstance(values, (bytes, bytearray)):
-                values = [values]
+                    # If we've finished our headers, then go ahead and add our
+                    # item to our request queue so that our writer coroutine
+                    # can pull them off and write the responses
+                    if not request_queued and request.headers_complete:
+                        request_queued = True
+                        yield from requests.put(request)
 
-            for value in values:
-                response.write(key + b": " + value + b"\r\n")
+                    # If we're in the body portion of our request and we've
+                    # received an EOF then we should feed an EOF into our body
+                    # and break out of this loop. We do not mark the request
+                    # as received because HTTP/1.1 provides mechanisms other
+                    # than connection close for determining if a request is
+                    # finished.
+                    if request.headers_complete and reader.at_eof():
+                        request.body.feed_eof()
+                        break
+        finally:
+            # Once we've received all of our data and processed it we want to
+            # close our queue so that our process_responses coroutine will know
+            # to shutdown.
+            requests.close()
 
-        # Before we get to the body, we need to write a blank line to separate
-        # the headers and the response body
-        response.write(b"\r\n")
+    @asyncio.coroutine
+    def process_responses(self, writer, requests):
+        # TODO: How do we know when we need to close the connection?
+        try:
+            while not requests.closed and not requests.empty():
+                # Get the next request off the queue, blocking until one is
+                # available.
+                try:
+                    request = yield from asyncio.wait_for(requests.get(), 5.0)
+                except asyncio.TimeoutError:
+                    # If we've been waiting for longer than our timeout then
+                    # we'll just continue on in our loop. This provides a
+                    # chance for the while loop to be reevaluated.
+                    continue
 
-        for chunk in body:
-            # If the chunk is a coroutine, then we want to wait for the result
-            # before we write it.
-            if asyncio.iscoroutine(chunk):
-                chunk = yield from chunk
+                # Now that we have a request, we'll want to dispatch to our
+                # underlying callbacks.
+                status, resp_headers, body = (
+                    yield from self._callback(*request.as_params())
+                )
 
-            # Write our chunk out to the connect client
-            response.write(chunk)
+                # Write out the status line to the client for this request
+                writer.write(request.http_version + b" " + status + b"\r\n")
 
-        # We've written everything in our iterator, so we want to close the
-        # connection.
-        response.close()
+                # Write out the headers, taking special care to ensure that any
+                # mandatory headers are added.
+                # TODO: We need to handle some required headers
+                for key, values in resp_headers.items():
+                    # In order to handle headers which need to have multiple
+                    # values like Set-Cookie, we allow the value of the header
+                    # to be an iterable instead of a bytes object, in which
+                    # case we'll write multiple header lines for this header.
+                    if isinstance(values, (bytes, bytearray)):
+                        values = [values]
+
+                    for value in values:
+                        writer.write(key + b": " + value + b"\r\n")
+
+                # Before we get to the body, we need to write a blank line to
+                # separate the headers and the response body
+                writer.write(b"\r\n")
+
+                # Drain the buffer before proceeding, this will ensure that the
+                # transport has handled our writes and we're safe to continue
+                # processing.
+                yield from writer.drain()
+
+                for chunk in body:
+                    # If the chunk is a coroutine, then we want to wait for the
+                    # result before we write it.
+                    if asyncio.iscoroutine(chunk):
+                        chunk = yield from chunk
+
+                    # Write our chunk out to the connected client and drain our
+                    # buffer again to ensure the transport is ready for more.
+                    writer.write(chunk)
+                    yield from self._writer.drain()
+        finally:
+            writer.close()
 
 
 class HTTPServer:
@@ -143,6 +186,4 @@ class HTTPServer:
         self.loop = None
 
     def __call__(self):
-        reader = asyncio.StreamReader(loop=self.loop)
-        protocol = self.protocol_class(reader, self.callback, loop=self.loop)
-        return protocol
+        return self.protocol_class(self.callback, loop=self.loop)
