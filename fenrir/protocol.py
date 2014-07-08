@@ -169,6 +169,54 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
                     for value in values:
                         writer.write(key + b": " + value + b"\r\n")
 
+                # We need to figure out our content length, unless the
+                # application has already provided it, in which case we'll just
+                # use it outright.
+                if b"Content-Length" in resp_headers:
+                    content_length = int(resp_headers[b"Content-Length"])
+                else:
+                    # TODO: We need to handle the case where the iterable may
+                    #       not have a defined length. This will be treated
+                    #       similarly to a len() > 1.
+                    if len(body) == 0:
+                        # If an empty response was provided, then we have no
+                        # content and our Content-Length is 0
+                        content_length = 0
+                    elif len(body) == 1:
+                        # If we have only one item in our iterable, then we can
+                        # simply get it, resolving it if it is a coroutine, and
+                        # then see how long it is to determine the
+                        # Content-Length
+                        chunk = next(iter(body))
+                        if asyncio.iscoroutine(chunk):
+                            chunk = yield from chunk
+
+                        content_length = len(chunk)
+                        body = [chunk]
+                    else:
+                        # We have no way of knowing what the content-length of
+                        # the response is. We need to close this connection
+                        # after this response has been processed unless the
+                        # client supports Transfer-Encoding: chunked. This will
+                        # throw away any requests that we have queued and
+                        # haven't processed yet. To handle this we need to
+                        # close our queue to prevent adding any more items and
+                        # then throw away any of the items we have left in the
+                        # queue.
+                        # TODO: Implement Transfer-Encoding: chunked
+                        requests.close()
+                        while not requests.empty():
+                            requests.get_nowait()
+                        writer.write(b"Connection: close\r\n")
+                        content_length = None
+
+                    if content_length is not None:
+                        writer.write(
+                            b"Content-Length: " +
+                            str(content_length).encode("ascii") +
+                            b"\r\n"
+                        )
+
                 # Before we get to the body, we need to write a blank line to
                 # separate the headers and the response body
                 writer.write(b"\r\n")
