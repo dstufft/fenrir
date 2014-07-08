@@ -81,8 +81,7 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
     @asyncio.coroutine
     def process_data(self, reader, requests):
         try:
-            final_request = False
-            while not reader.at_eof() and not final_request:
+            while not reader.at_eof() and not requests.closed:
                 request = Request(body=asyncio.StreamReader(loop=self._loop))
                 request_queued = False
 
@@ -98,6 +97,9 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
                     # item to our request queue so that our writer coroutine
                     # can pull them off and write the responses
                     if not request_queued and request.headers_complete:
+                        request_queued = True
+                        yield from requests.put(request)
+
                         # Determine if we need to stop processing requests on
                         # this connection because the client either doesn't
                         # support HTTP/1.1 or has signaled to use that they are
@@ -107,10 +109,7 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
                         if (request.http_version == b"HTTP/1.0"
                             or request.headers.get(b"Connection", None)
                                 == b"close"):
-                            final_request = True
-
-                        request_queued = True
-                        yield from requests.put(request)
+                            requests.close()
 
                     # If we're in the body portion of our request and we've
                     # received an EOF then we should feed an EOF into our body
