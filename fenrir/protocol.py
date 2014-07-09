@@ -27,8 +27,6 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
 
         self._callback = callback
 
-        self._server = None
-
     def connection_made(self, transport):
         # Stash our transport so we can use it later.
         self._transport = transport
@@ -45,9 +43,6 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
         self._writer = asyncio.StreamWriter(
             self._transport, self, self._reader, self._loop,
         )
-
-        # Grab the name of our socket if we have it
-        self._server = self._transport.get_extra_info("sockname")
 
         # Create a FIFO queue to hold all of our requests as we process them
         # TODO: Is there a maximum size we want this queue to be? The
