@@ -2,3 +2,5 @@ include AUTHORS
 include LICENSE
 include README.rst
 include CONTRIBUTING.rst
+
+recursive-include fenrir/http/c/http11 *.h *.c *.rl
