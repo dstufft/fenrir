@@ -13,7 +13,7 @@
 
 from distutils.command.build import build
 
-from setuptools import setup, find_packages
+from setuptools import find_packages, setup
 from setuptools.command.install import install
 
 
