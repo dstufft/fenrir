@@ -14,7 +14,7 @@ import asyncio
 
 from asyncio.streams import FlowControlMixin
 
-from fenrir.http import Request
+from fenrir.http.req import Request
 from fenrir.queues import CloseableQueue
 
 
