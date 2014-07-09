@@ -14,6 +14,7 @@
 import os.path
 
 from distutils.command.build import build
+from distutils.command.build_clib import build_clib
 
 from setuptools import find_packages, setup
 from setuptools.command.install import install
@@ -74,6 +75,35 @@ class CFFIInstall(install):
         install.finalize_options(self)
 
 
+class HTTP1BuildCLib(build_clib):
+
+    def build_libraries(self, *args, **kwargs):
+        # Stash the initial values here
+        compiler = self.compiler.compiler
+        compiler_so = self.compiler.compiler_so
+
+        # mongrel2's http11 parser does not build correctly with the
+        # -Werror=declaration-after-statement option declared, so we'll ensure
+        # that we don't have it specified.
+        self.compiler.compiler = [
+            x for x in self.compiler.compiler
+            if x != "-Werror=declaration-after-statement"
+        ]
+        self.compiler.compiler_so = [
+            x for x in self.compiler.compiler_so
+            if x != "-Werror=declaration-after-statement"
+        ]
+
+        # Go ahead and finish building the libraries
+        ret = build_clib.build_libraries(self, *args, **kwargs)
+
+        # Undo our changes
+        self.compiler.compiler = compiler
+        self.compiler.compiler_so = compiler_so
+
+        return ret
+
+
 meta = {}
 with open("fenrir/__init__.py") as fp:
     exec(fp.read(), meta)
@@ -130,6 +160,7 @@ setup(
     ext_package="fenrir",
     cmdclass={
         "build": CFFIBuild,
+        "build_clib": HTTP1BuildCLib,
         "install": CFFIInstall,
     }
 )
