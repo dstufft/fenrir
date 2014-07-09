@@ -124,21 +124,21 @@ class Library:
 
     def __init__(self, ffi):
         self.ffi = ffi
-        self._initialized = False
+        self.lib = None
 
         # This prevents the compile_module() from being called, the module
         # should have been compiled by setup.py
         def _compile_module(*args, **kwargs):
             raise RuntimeError("Cannot compile module during runtime")
+        self.ffi.verifier.compile_module = _compile_module
         self.ffi.verifier._compile_module = _compile_module
 
     def __getattr__(self, name):
-        if not self._initialized:
-            self._lib = self.ffi.verifier.load_library()
-            self._initialized = True
+        if not self.lib:
+            self.lib = self.ffi.verifier.load_library()
 
         # redirect attribute access to the underlying lib
-        return getattr(self._lib, name)
+        return getattr(self.lib, name)
 
 
 # We use a lazily-loading Library class to wrap the ffi library. We do this
