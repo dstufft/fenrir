@@ -22,26 +22,24 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
 
     def __init__(self, callback, loop=None):
         super().__init__(loop=loop)
-        self._writer = None
-        self._reader = None
 
-        self._callback = callback
+        self.writer = None
+        self.reader = None
+
+        self.callback = callback
 
     def connection_made(self, transport):
-        # Stash our transport so we can use it later.
-        self._transport = transport
-
         # Create a reader which we'll use to handle reading from our stream,
         # this will help us handle applying back pressure to prevent us from
         # filling our queues too much.
-        self._reader = asyncio.StreamReader(loop=self._loop)
-        self._reader.set_transport(self._transport)
+        self.reader = asyncio.StreamReader(loop=self._loop)
+        self.reader.set_transport(transport)
 
         # Create a writer which we'll use to handle writing to our stream, this
         # will help us handle applying back pressure to prevent us from filling
         # our queues too much.
-        self._writer = asyncio.StreamWriter(
-            self._transport, self, self._reader, self._loop,
+        self.writer = asyncio.StreamWriter(
+            transport, self, self.reader, self._loop,
         )
 
         # Create a FIFO queue to hold all of our requests as we process them
@@ -53,25 +51,25 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
         # Schedule our two coroutines which will handle processing incoming
         # data, dispatching it to the underlying application, and then writing
         # the data back out to the transport.
-        asyncio.async(self.process_data(self._reader, req_q), loop=self._loop)
+        asyncio.async(self.process_data(self.reader, req_q), loop=self._loop)
         asyncio.async(
-            self.process_responses(self._writer, req_q),
+            self.process_responses(self.writer, req_q),
             loop=self._loop,
         )
 
     def connection_lost(self, exc):
         if exc is None:
-            self._reader.feed_eof()
+            self.reader.feed_eof()
         else:
-            self._reader.set_exception(exc)
+            self.reader.set_exception(exc)
 
         super().connection_lost(exc)
 
     def data_received(self, data):
-        self._reader.feed_data(data)
+        self.reader.feed_data(data)
 
     def eof_received(self):
-        self._reader.feed_eof()
+        self.reader.feed_eof()
 
     @asyncio.coroutine
     def process_data(self, reader, requests):
@@ -138,7 +136,7 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
                 # Now that we have a request, we'll want to dispatch to our
                 # underlying callbacks.
                 status, resp_headers, body = (
-                    yield from self._callback(*request.as_params())
+                    yield from self.callback(*request.as_params())
                 )
 
                 # Write out the status line to the client for this request
