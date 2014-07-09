@@ -230,7 +230,7 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
                     # Write our chunk out to the connected client and drain our
                     # buffer again to ensure the transport is ready for more.
                     writer.write(chunk)
-                    yield from self._writer.drain()
+                    yield from writer.drain()
         finally:
             writer.close()
 
