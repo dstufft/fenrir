@@ -24,8 +24,8 @@ CFFI_DEPENDENCY = "cffi>=0.8"
 
 
 def get_ext_modules():
-    from fenrir.http import _http11
-    return [_http11.ffi.verifier.get_extension()]
+    from fenrir.http import http11
+    return [http11.ffi.verifier.get_extension()]
 
 
 def get_include_dirs(include_dirs):
