@@ -11,6 +11,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os.path
+
 from distutils.command.build import build
 
 from setuptools import find_packages, setup
@@ -21,8 +23,22 @@ CFFI_DEPENDENCY = "cffi>=0.8"
 
 
 def get_ext_modules():
-    from fenrir.http import c
-    return [c.ffi.verifier.get_extension()]
+    from fenrir.http import _http11
+    return [_http11.ffi.verifier.get_extension()]
+
+
+def get_include_dirs(include_dirs):
+    if include_dirs is None:
+        include_dirs = []
+
+    include_dirs.append(
+        os.path.join(
+            os.path.abspath(os.path.dirname(__file__)),
+            "bundled",
+        )
+    )
+
+    return include_dirs
 
 
 class CFFIBuild(build):
@@ -37,6 +53,9 @@ class CFFIBuild(build):
 
     def finalize_options(self):
         self.distribution.ext_modules = get_ext_modules()
+        self.distribution.include_dirs = get_include_dirs(
+            self.distribution.include_dirs,
+        )
         build.finalize_options(self)
 
 
@@ -49,6 +68,9 @@ class CFFIInstall(install):
 
     def finalize_options(self):
         self.distribution.ext_modules = get_ext_modules()
+        self.distribution.include_dirs = get_include_dirs(
+            self.distribution.include_dirs,
+        )
         install.finalize_options(self)
 
 
@@ -90,6 +112,17 @@ setup(
 
     setup_requires=[
         CFFI_DEPENDENCY,
+    ],
+
+    # Build the mongrel2 http parser
+    libraries=[
+        (
+            "http11",
+            {
+                "sources": ["bundled/http11/http11_parser.c"],
+                "include_dirs": ["bundled"],
+            },
+        ),
     ],
 
     # These are needed so that CFFI can correctly function

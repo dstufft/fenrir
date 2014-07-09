@@ -12,7 +12,7 @@
 
 import zero_buffer
 
-from fenrir.http import c
+from fenrir.http import _http11
 
 
 class HTTPParser:
@@ -31,20 +31,20 @@ class HTTPParser:
 
         # Create a http_parser struct so to act as a bag of data to store
         # information about what we're parsing into
-        self._parser = c.ffi.new("http_parser *")
+        self._parser = _http11.ffi.new("http_parser *")
 
         # Initialize our http_parser struct
-        c.lib.http_parser_init(self._parser)
+        _http11.lib.http_parser_init(self._parser)
 
         # Create our callback functions, these are FFI callback instances which
         # we store on our instance because if we allow them to get garbage
         # collected before they're called by the C code.
-        self._cb_header_done = c.element_cb(self._cb_header_done)
-        self._cb_http_version = c.element_cb(self._cb_http_version)
-        self._cb_request_method = c.element_cb(self._cb_request_method)
-        self._cb_request_path = c.element_cb(self._cb_request_path)
-        self._cb_query_string = c.element_cb(self._cb_query_string)
-        self._cb_http_field = c.field_cb(self._cb_http_field)
+        self._cb_header_done = _http11.element_cb(self._cb_header_done)
+        self._cb_http_version = _http11.element_cb(self._cb_http_version)
+        self._cb_request_method = _http11.element_cb(self._cb_request_method)
+        self._cb_request_path = _http11.element_cb(self._cb_request_path)
+        self._cb_query_string = _http11.element_cb(self._cb_query_string)
+        self._cb_http_field = _http11.field_cb(self._cb_http_field)
 
         # Actually register our callbacks with our http_parser instance
         self._parser.header_done = self._cb_header_done
@@ -64,40 +64,40 @@ class HTTPParser:
     def _cb_http_version(self, data, at, length):
         # Will this always be NULL? I have no idea about it seems to be, so
         # we'll assert against it being NULL just to make sure.
-        assert data == c.ffi.NULL
+        assert data == _http11.ffi.NULL
 
-        self.http_version = c.ffi.buffer(at, length)[:]
+        self.http_version = _http11.ffi.buffer(at, length)[:]
 
     def _cb_request_method(self, data, at, length):
         # Will this always be NULL? I have no idea about it seems to be, so
         # we'll assert against it being NULL just to make sure.
-        assert data == c.ffi.NULL
+        assert data == _http11.ffi.NULL
 
-        self.method = c.ffi.buffer(at, length)[:]
+        self.method = _http11.ffi.buffer(at, length)[:]
 
     def _cb_request_path(self, data, at, length):
         # Will this always be NULL? I have no idea about it seems to be, so
         # we'll assert against it being NULL just to make sure.
-        assert data == c.ffi.NULL
+        assert data == _http11.ffi.NULL
 
-        self.path = c.ffi.buffer(at, length)[:]
+        self.path = _http11.ffi.buffer(at, length)[:]
 
     def _cb_query_string(self, data, at, length):
         # Will this always be NULL? I have no idea about it seems to be, so
         # we'll assert against it being NULL just to make sure.
-        assert data == c.ffi.NULL
+        assert data == _http11.ffi.NULL
 
-        self.query = c.ffi.buffer(at, length)[:]
+        self.query = _http11.ffi.buffer(at, length)[:]
 
     def _cb_http_field(self, data, field, flen, value, vlen):
         # Will this always be NULL? I have no idea about it seems to be, so
         # we'll assert against it being NULL just to make sure.
-        assert data == c.ffi.NULL
+        assert data == _http11.ffi.NULL
 
         # We need to get the field name and the value from our buffers so that
         # we can use that data as our headers.
-        field = c.ffi.buffer(field, flen)[:]
-        value = c.ffi.buffer(value, vlen)[:]
+        field = _http11.ffi.buffer(field, flen)[:]
+        value = _http11.ffi.buffer(value, vlen)[:]
 
         # TODO: We need to handle multiple values here, probably by collapsing
         #       them into a single value?
@@ -109,7 +109,7 @@ class HTTPParser:
     def _cb_header_done(self, data, at, length):
         # Will this always be NULL? I have no idea about it seems to be, so
         # we'll assert against it being NULL just to make sure.
-        assert data == c.ffi.NULL
+        assert data == _http11.ffi.NULL
 
         # Now that the headers have been parsed we can mark this has having
         # been completed.
@@ -151,7 +151,7 @@ class HTTPParser:
         if not self.headers_complete:
             # Actually parse the chunk of data we've been given. The return
             # value will be how much data was actually parsed.
-            parsed = c.lib.http_parser_execute(
+            parsed = _http11.lib.http_parser_execute(
                 self._parser, data, length, offset,
             )
         else:

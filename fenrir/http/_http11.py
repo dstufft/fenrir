@@ -121,17 +121,8 @@ ffi.verifier = Verifier(
     # version installed that a library was built against.
     modulename=_create_modulename(CDEF, SOURCE, sys.version),
 
-    # We want to compile the http_parser.c instead of trying to link against it
-    # or anything like that.
-    sources=[
-        os.path.join(_bundled_dir, "http11/http11_parser.c"),
-    ],
-
-    # We need to include the bundled dir so that we can include the header
-    # files located in it.
-    include_dirs=[
-        _bundled_dir,
-    ],
+    # We link against http11, which is bundled along with fenrir.
+    libraries=["http11"],
 )
 
 
