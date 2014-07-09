@@ -12,7 +12,6 @@
 
 import binascii
 import functools
-import os.path
 import sys
 
 from cffi import FFI
@@ -97,11 +96,6 @@ field_cb = functools.partial(
         "size_t vlen)"
     ),
 )
-
-
-# We need to locate our sources, we have embedded the http parser from mongrel2
-# so in this case our sources are located right alongside this file.
-_bundled_dir = os.path.dirname(__file__)
 
 
 # Construct a Verifier manually, this will prevent the ffi instance from
