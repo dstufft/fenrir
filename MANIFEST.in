@@ -7,4 +7,6 @@ recursive-include examples *.py
 recursive-include fenrir/http/c/http11 *.h *.c *.rl
 recursive-include tests *.py
 
+exclude .travis.yml
+
 prune fenrir/http/c/__pycache__
