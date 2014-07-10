@@ -58,11 +58,11 @@ class Request:
         if self.headers_complete:
             self.body.feed_data(self._parser.recv_body())
 
-        # Determine if we've received the complete HTTP request, if we have
-        # then we should close our stream reader because there is nothing more
-        # to read.
-        if self.received:
-            self.body.feed_eof()
+            # Determine if we've received the complete HTTP request, if we have
+            # then we should close our stream reader because there is nothing
+            # more to read.
+            if self.received:
+                self.body.feed_eof()
 
     def as_params(self):
         # TODO: This needs to not expose this class which is an internal detail
