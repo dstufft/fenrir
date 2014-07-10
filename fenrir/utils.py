@@ -16,7 +16,7 @@ import importlib
 def resolve_app(app_name):
     # First we need to determine the module and function name for our
     # application
-    module_name, *leftover = app_name.split(":", 1)
+    module_name, *leftover = app_name.split(":")
     if len(leftover) > 1:
         raise ValueError("Cannot have more than one ':' in the app name")
     elif leftover:
