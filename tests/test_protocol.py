@@ -25,17 +25,17 @@ class StringTransport(asyncio.Transport):
 class TestHTTPProtocol:
 
     def test_initialization(self):
-        callback = pretend.stub()
-        protocol = HTTPProtocol(callback)
+        app = pretend.stub()
+        protocol = HTTPProtocol(app)
 
         assert protocol.writer is None
         assert protocol.reader is None
-        assert protocol.callback is callback
+        assert protocol.app is app
 
     def test_connection_made(self, monkeypatch):
-        callback = pretend.stub()
+        app = pretend.stub()
         loop = pretend.stub()
-        protocol = HTTPProtocol(callback, loop=loop)
+        protocol = HTTPProtocol(app, loop=loop)
         transport = StringTransport()
 
         async = pretend.call_recorder(lambda coro, loop: None)
@@ -97,9 +97,9 @@ class TestHTTPProtocol:
         ]
 
     def test_connection_lost_no_exc(self):
-        callback = pretend.stub()
+        app = pretend.stub()
         loop = pretend.stub()
-        protocol = HTTPProtocol(callback, loop=loop)
+        protocol = HTTPProtocol(app, loop=loop)
         protocol.reader = pretend.stub(
             feed_eof=pretend.call_recorder(lambda: None),
         )
@@ -109,9 +109,9 @@ class TestHTTPProtocol:
         assert protocol.reader.feed_eof.calls == [pretend.call()]
 
     def test_connection_lost_with_exc(self):
-        callback = pretend.stub()
+        app = pretend.stub()
         loop = pretend.stub()
-        protocol = HTTPProtocol(callback, loop=loop)
+        protocol = HTTPProtocol(app, loop=loop)
         protocol.reader = pretend.stub(
             set_exception=pretend.call_recorder(lambda exc: None),
         )
@@ -122,9 +122,9 @@ class TestHTTPProtocol:
         assert protocol.reader.set_exception.calls == [pretend.call(exc)]
 
     def test_data_received_feeds_reader(self):
-        callback = pretend.stub()
+        app = pretend.stub()
         loop = pretend.stub()
-        protocol = HTTPProtocol(callback, loop=loop)
+        protocol = HTTPProtocol(app, loop=loop)
         protocol.reader = pretend.stub(
             feed_data=pretend.call_recorder(lambda data: None),
         )
@@ -135,9 +135,9 @@ class TestHTTPProtocol:
         assert protocol.reader.feed_data.calls == [pretend.call(data)]
 
     def test_eof_received_feeds_reader(self):
-        callback = pretend.stub()
+        app = pretend.stub()
         loop = pretend.stub()
-        protocol = HTTPProtocol(callback, loop=loop)
+        protocol = HTTPProtocol(app, loop=loop)
         protocol.reader = pretend.stub(
             feed_eof=pretend.call_recorder(lambda: None),
         )
@@ -152,12 +152,12 @@ class TestHTTPServer:
     def test_basic_factory(self):
         protocol_instance = pretend.stub()
         protocol = pretend.call_recorder(lambda cb, loop: protocol_instance)
-        callback = pretend.stub()
+        app = pretend.stub()
 
-        factory = HTTPServer(callback)
+        factory = HTTPServer(app)
         factory.protocol_class = protocol
 
         assert factory() is protocol_instance
         assert factory.protocol_class.calls == [
-            pretend.call(callback, loop=None),
+            pretend.call(app, loop=None),
         ]

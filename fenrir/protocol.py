@@ -20,13 +20,13 @@ from fenrir.queues import CloseableQueue
 
 class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
 
-    def __init__(self, callback, loop=None):
+    def __init__(self, app, loop=None):
         super().__init__(loop=loop)
 
         self.writer = None
         self.reader = None
 
-        self.callback = callback
+        self.app = app
 
     def connection_made(self, transport):
         # Create a reader which we'll use to handle reading from our stream,
@@ -134,9 +134,9 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
                     continue
 
                 # Now that we have a request, we'll want to dispatch to our
-                # underlying callbacks.
+                # app.
                 status, resp_headers, body = (
-                    yield from self.callback(*request.as_params())
+                    yield from self.app(*request.as_params())
                 )
 
                 # Write out the status line to the client for this request
@@ -236,9 +236,9 @@ class HTTPServer:
 
     protocol_class = HTTPProtocol
 
-    def __init__(self, callback, loop=None):
-        self.callback = callback
+    def __init__(self, app, loop=None):
+        self.app = app
         self.loop = None
 
     def __call__(self):
-        return self.protocol_class(self.callback, loop=self.loop)
+        return self.protocol_class(self.app, loop=self.loop)
