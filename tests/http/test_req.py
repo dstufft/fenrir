@@ -22,6 +22,7 @@ class FakeParser:
         self.data = []
         self.body = []
         self.headers_complete = False
+        self.has_body = False
         self.completed = False
         self.max_data = 0
         self.received_at = received_at
@@ -104,6 +105,7 @@ class TestRequest:
         assert req._parser.data == [b"abc", b"zdefgh"]
 
         req._parser.headers_complete = True
+        req._parser.has_body = True
 
         req.add_bytes(b"123")
         req.add_bytes(b"456")

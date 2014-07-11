@@ -56,7 +56,8 @@ class Request:
         # If our headers are complete, feed any data we've gotten past the
         # headers into our body.
         if self.headers_complete:
-            self.body.feed_data(self._parser.recv_body())
+            if self._parser.has_body:
+                self.body.feed_data(self._parser.recv_body())
 
             # Determine if we've received the complete HTTP request, if we have
             # then we should close our stream reader because there is nothing

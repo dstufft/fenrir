@@ -61,6 +61,10 @@ class HTTPParser:
                      or (self._buffer is not None
                          and self._buffer.writepos >= self._buffer.capacity)))
 
+    @property
+    def has_body(self):
+        return self._buffer is not None
+
     def _cb_http_version(self, data, at, length):
         # Will this always be NULL? I have no idea about it seems to be, so
         # we'll assert against it being NULL just to make sure.
@@ -116,23 +120,19 @@ class HTTPParser:
         self.headers_complete = True
 
     def recv_body(self):
-        # We only want to create a view and return any data if we have a buffer
-        # and it has some data, otherwise we'll just return a b""
-        if self._buffer is not None:
-            # Make a view to our buffer, starting from the last place we read
-            # from, this will enable us to return a view that contains only the
-            # data that we have not yet returned.
-            view = self._buffer.view(self._buffer_pos)
+        # Calling recv_body before we've received any body data is invalid so
+        # we'll assert that we have a buffer.
+        assert self._buffer is not None, "Cannot recv_body without a body"
 
-            # Advance our buffer position to the high water mark of the buffer
-            self._buffer_pos = self._buffer.writepos
+        # Make a view to our buffer, starting from the last place we read from,
+        # this will enable us to return a view that contains only the data that
+        # we have not yet returned.
+        view = self._buffer.view(self._buffer_pos)
 
-            return view
-        else:
-            # TODO: Should we return a zero_buffer.BufferView here? If so where
-            #       should it come from, we don't actually have a BufferView
-            #       yet?
-            return b""
+        # Advance our buffer position to the high water mark of the buffer
+        self._buffer_pos = self._buffer.writepos
+
+        return view
 
     def execute(self, data, length=None, offset=0):
         # If this parser is completed, then we don't care about processing
@@ -168,6 +168,13 @@ class HTTPParser:
         #       and integer and not just blindly int() it.
         if (self.headers_complete
                 and int(self.headers.get(b"Content-Length", 0))):
+            # If we haven't created a buffer yet, then go ahead and create one
+            # which has enough room for our entire request body.
+            if self._buffer is None:
+                self._buffer = zero_buffer.Buffer.allocate(
+                    int(self.headers[b"Content-Length"]),
+                )
+
             # We need to figure out the correct offset from our data, this
             # should be our original offset, plus any data that we've parsed
             # in the headers
@@ -187,14 +194,6 @@ class HTTPParser:
             #       anything except cause us to return funky numbers for our
             #       parsed.
             if body_length > 0:
-                # If we haven't created a buffer yet, then go ahead and create
-                # one which has enough room for our entire request body.
-                # TODO: Should we move this to the header callback?
-                if self._buffer is None:
-                    self._buffer = zero_buffer.Buffer.allocate(
-                        int(self.headers[b"Content-Length"]),
-                    )
-
                 # Add the remaining body into our buffer and add the amount
                 # that has been added so that our count of bytes parsed is
                 # accurate.
