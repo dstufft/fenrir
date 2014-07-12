@@ -118,9 +118,16 @@ class TestRequest:
         assert req.body.data == [b"123", b"456", b"789"]
         assert req.body.eof
 
-    def test_request_add_bytes_extends_body_after_headers(self):
-        req = Request(None)
-        req._parser = FakeParser()
+    def test_request_add_bytes_empty_body(self):
+        req = Request(FakeStreamReader())
+        req._parser = FakeParser(received_at=1)
+        req._parser.headers_complete = True
+        req._parser.body_length = 0
+
+        req.add_bytes(b"123")
+
+        assert req.body.data == []
+        assert req.body.eof
 
     def test_request_as_params(self):
         body = pretend.stub()
