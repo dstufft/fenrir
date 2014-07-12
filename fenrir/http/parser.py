@@ -29,6 +29,7 @@ class HTTPParser:
         self.headers_complete = False
         self._buffer = None
         self._buffer_pos = 0
+        self._parsed = 0
 
         # Create a http_parser struct so to act as a bag of data to store
         # information about what we're parsing into
@@ -61,10 +62,6 @@ class HTTPParser:
                 and (not self.body_length
                      or (self._buffer is not None
                          and self._buffer.writepos >= self._buffer.capacity)))
-
-    @property
-    def has_body(self):
-        return self._buffer is not None
 
     @property
     def body_length(self):
@@ -215,6 +212,11 @@ class HTTPParser:
             parsed = http11.lib.http_parser_execute(
                 self._parser, data, length, offset,
             )
+
+            # The mongrel2 HTTP/1.1 parser returns the total number of bytes
+            # parsed. We want to only include the amount parsed *this* time so
+            # we keep track of how much we've parsed and subtract it.
+            parsed -= self._parsed
         else:
             # If we haven't parsed anything, then we've parsed 0 bytes
             parsed = 0
@@ -254,6 +256,8 @@ class HTTPParser:
                 parsed += self._buffer.add_bytes(
                     data[body_offset:body_offset + body_length]
                 )
+
+        self._parsed += parsed
 
         # Finally, return how much we've parsed so that the user can make
         # decisions about what to do with the rest of the data.
