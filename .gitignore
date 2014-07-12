@@ -19,6 +19,7 @@ pip-log.txt
 .coverage
 .tox
 .cache
+htmlcov/
 
 # Developer local files
 \#*
