@@ -6,9 +6,11 @@ env:
   - TOXENV=pep8
   - TOXENV=packaging
 
-install: pip install tox
+install: pip install tox coverage
 
-script: tox
+script:
+  - tox
+  - coverage report --fail-under 100 > /dev/null
 
 branches:
   only:
