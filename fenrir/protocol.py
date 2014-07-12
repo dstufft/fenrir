@@ -145,7 +145,11 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
                 # Get the next request off the queue, blocking until one is
                 # available.
                 try:
-                    request = yield from asyncio.wait_for(requests.get(), 5.0)
+                    request = yield from asyncio.wait_for(
+                        requests.get(),
+                        5.0,
+                        loop=self._loop,
+                    )
                 except asyncio.TimeoutError:
                     # If we've been waiting for longer than our timeout then
                     # we'll just continue on in our loop. This provides a
@@ -166,27 +170,12 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
                         yield from self.app(*request.as_params())
                     )
 
-                # Write out the status line to the client for this request
-                writer.write(request.http_version + b" " + status + b"\r\n")
-
                 # If this is our last request (e.g. the queue is closed and
                 # empty), then we want to add a Connection: close header.
-                if requests.closed and requests.empty():
-                    writer.write(b"Connection: close\r\n")
+                should_close = requests.closed and requests.empty()
 
-                # Write out the headers, taking special care to ensure that any
-                # mandatory headers are added.
-                # TODO: We need to handle some required headers
-                for key, values in resp_headers.items():
-                    # In order to handle headers which need to have multiple
-                    # values like Set-Cookie, we allow the value of the header
-                    # to be an iterable instead of a bytes object, in which
-                    # case we'll write multiple header lines for this header.
-                    if isinstance(values, (bytes, bytearray)):
-                        values = [values]
-
-                    for value in values:
-                        writer.write(key + b": " + value + b"\r\n")
+                # Write out the status line to the client for this request
+                writer.write(request.http_version + b" " + status + b"\r\n")
 
                 # We need to figure out our content length, unless the
                 # application has already provided it, in which case we'll just
@@ -226,15 +215,39 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
                         requests.close()
                         while not requests.empty():
                             requests.get_nowait()
-                        writer.write(b"Connection: close\r\n")
+                        should_close = True
                         content_length = None
 
-                    if content_length is not None:
-                        writer.write(
-                            b"Content-Length: " +
-                            str(content_length).encode("ascii") +
-                            b"\r\n"
-                        )
+                # If we should close this connection, then we'll add the header
+                # that states that.
+                if should_close:
+                    writer.write(b"Connection: close\r\n")
+
+                # If we have a Content-Length, then we'll write out that header
+                if content_length is not None:
+                    writer.write(
+                        b"Content-Length: " +
+                        str(content_length).encode("ascii") +
+                        b"\r\n"
+                    )
+
+                # Write out the headers, taking special care to ensure that any
+                # mandatory headers are added.
+                for key, values in resp_headers.items():
+                    # We need to skip the Content-Length header because we
+                    # have written it out already.
+                    if key in {b"Content-Length"}:
+                        continue
+
+                    # In order to handle headers which need to have multiple
+                    # values like Set-Cookie, we allow the value of the header
+                    # to be an iterable instead of a bytes object, in which
+                    # case we'll write multiple header lines for this header.
+                    if isinstance(values, (bytes, bytearray)):
+                        values = [values]
+
+                    for value in values:
+                        writer.write(key + b": " + value + b"\r\n")
 
                 # Before we get to the body, we need to write a blank line to
                 # separate the headers and the response body
@@ -245,11 +258,27 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
                 # processing.
                 yield from writer.drain()
 
+                body_written = 0
                 for chunk in body:
+                    # If we've already written the entire declared body size,
+                    # assuming we had one, then we can break out of this loop
+                    # to prevent us from the extra processing.
+                    if (content_length is not None
+                            and body_written >= content_length):
+                        break
+
                     # If the chunk is a coroutine, then we want to wait for the
                     # result before we write it.
                     if asyncio.iscoroutine(chunk):
                         chunk = yield from chunk
+
+                    # We want to ensure we do not write more than we said we
+                    # would in our content length, assuming we have a content
+                    # length.
+                    if (content_length is not None
+                            and body_written + len(chunk) > content_length):
+                        chunk = chunk[:content_length - body_written]
+                    body_written += len(chunk)
 
                     # Write our chunk out to the connected client and drain our
                     # buffer again to ensure the transport is ready for more.

@@ -14,7 +14,7 @@ import asyncio
 
 import pretend
 
-from fenrir.http.errors import BadRequest
+from fenrir.http.errors import HTTPError, BadRequest
 from fenrir.http.req import Request
 from fenrir.protocol import HTTPProtocol, HTTPServer
 from fenrir.queues import CloseableQueue
@@ -61,6 +61,27 @@ class FakeStreamReader:
             self._buffer = self._buffer[size:]
 
         return bytes(data)
+
+
+class FakeStreamWriter:
+
+    def __init__(self):
+        self.buffer = bytearray()
+        self.drained = bytearray()
+        self.closed = False
+
+    def write(self, data):
+        assert not self.closed
+        self.buffer.extend(data)
+
+    @asyncio.coroutine
+    def drain(self):
+        assert not self.closed
+        self.drained.extend(self.buffer)
+        self.buffer = bytearray()
+
+    def close(self):
+        self.closed = True
 
 
 class TestHTTPProtocol:
@@ -375,6 +396,396 @@ class TestHTTPProtocol:
         request = requests.get_nowait()
 
         assert isinstance(request, Request)
+
+    def test_process_responses(self, monkeypatch):
+        monkeypatch.setattr(asyncio, "wait_for", lambda coro, *a, **kw: coro)
+
+        request = Request(FakeStreamReader())
+        request.add_bytes(
+            b"GET / HTTP/1.1\r\n"
+            b"Host: example.com\r\n"
+            b"Connection-Length: 0\r\n"
+            b"\r\n"
+        )
+
+        writer = FakeStreamWriter()
+        requests = CloseableQueue()
+        requests.put_nowait(request)
+        requests.close()
+
+        app = asyncio.coroutine(
+            lambda req, body: (b"200 OK", {}, [])
+        )
+
+        protocol = HTTPProtocol(app, loop=pretend.stub())
+
+        sync(protocol.process_responses(writer, requests))
+
+        assert writer.closed
+        assert not writer.buffer
+        assert bytes(writer.drained) == (
+            b"HTTP/1.1 200 OK\r\n"
+            b"Connection: close\r\n"
+            b"Content-Length: 0\r\n"
+            b"\r\n"
+        )
+
+    def test_process_responses_queue_timeout_retries(self, monkeypatch):
+        class WaitFor:
+            def __init__(self, num):
+                self.num = num
+                self.called = 0
+
+            def __call__(self, coro, *a, **kw):
+                self.called += 1
+                if self.called < self.num:
+                    raise asyncio.TimeoutError
+                return coro
+
+        wait_for = WaitFor(2)
+        monkeypatch.setattr(asyncio, "wait_for", wait_for)
+
+        request = Request(FakeStreamReader())
+        request.add_bytes(
+            b"GET / HTTP/1.1\r\n"
+            b"Host: example.com\r\n"
+            b"Connection-Length: 0\r\n"
+            b"\r\n"
+        )
+
+        writer = FakeStreamWriter()
+        requests = CloseableQueue()
+        requests.put_nowait(request)
+        requests.close()
+
+        app = asyncio.coroutine(
+            lambda req, body: (b"200 OK", {}, [])
+        )
+
+        protocol = HTTPProtocol(app, loop=pretend.stub())
+
+        sync(protocol.process_responses(writer, requests))
+
+        assert wait_for.called == 2
+        assert writer.closed
+        assert not writer.buffer
+        assert bytes(writer.drained) == (
+            b"HTTP/1.1 200 OK\r\n"
+            b"Connection: close\r\n"
+            b"Content-Length: 0\r\n"
+            b"\r\n"
+        )
+
+    def test_process_responses_http_error(self, monkeypatch):
+        monkeypatch.setattr(asyncio, "wait_for", lambda coro, *a, **kw: coro)
+
+        request = HTTPError()
+        request.as_response = lambda: (b"400 Bad Request", {}, [b"Foo Bar"])
+
+        writer = FakeStreamWriter()
+        requests = CloseableQueue()
+        requests.put_nowait(request)
+        requests.close()
+
+        app = asyncio.coroutine(
+            lambda req, body: (b"200 OK", {}, [])
+        )
+
+        protocol = HTTPProtocol(app, loop=pretend.stub())
+
+        sync(protocol.process_responses(writer, requests))
+
+        assert writer.closed
+        assert not writer.buffer
+        assert bytes(writer.drained)[:110] == (
+            b"HTTP/1.1 400 Bad Request\r\n"
+            b"Connection: close\r\n"
+            b"Content-Length: 7\r\n"
+            b"\r\n"
+            b"Foo Bar"
+        )
+
+    def test_process_responses_accepts_headers(self, monkeypatch):
+        monkeypatch.setattr(asyncio, "wait_for", lambda coro, *a, **kw: coro)
+
+        request = Request(FakeStreamReader())
+        request.add_bytes(
+            b"GET / HTTP/1.1\r\n"
+            b"Host: example.com\r\n"
+            b"Connection-Length: 0\r\n"
+            b"\r\n"
+        )
+
+        writer = FakeStreamWriter()
+        requests = CloseableQueue()
+        requests.put_nowait(request)
+        requests.close()
+
+        app = asyncio.coroutine(
+            lambda req, body: (b"200 OK", {b"Test": b"Yes!"}, [])
+        )
+
+        protocol = HTTPProtocol(app, loop=pretend.stub())
+
+        sync(protocol.process_responses(writer, requests))
+
+        assert writer.closed
+        assert not writer.buffer
+        assert bytes(writer.drained) == (
+            b"HTTP/1.1 200 OK\r\n"
+            b"Connection: close\r\n"
+            b"Content-Length: 0\r\n"
+            b"Test: Yes!\r\n"
+            b"\r\n"
+        )
+
+    def test_process_responses_accepts_header_list(self, monkeypatch):
+        monkeypatch.setattr(asyncio, "wait_for", lambda coro, *a, **kw: coro)
+
+        request = Request(FakeStreamReader())
+        request.add_bytes(
+            b"GET / HTTP/1.1\r\n"
+            b"Host: example.com\r\n"
+            b"Connection-Length: 0\r\n"
+            b"\r\n"
+        )
+
+        writer = FakeStreamWriter()
+        requests = CloseableQueue()
+        requests.put_nowait(request)
+        requests.close()
+
+        app = asyncio.coroutine(
+            lambda req, body: (b"200 OK", {b"Test": [b"Yes!", b"No!"]}, [])
+        )
+
+        protocol = HTTPProtocol(app, loop=pretend.stub())
+
+        sync(protocol.process_responses(writer, requests))
+
+        assert writer.closed
+        assert not writer.buffer
+        assert bytes(writer.drained) == (
+            b"HTTP/1.1 200 OK\r\n"
+            b"Connection: close\r\n"
+            b"Content-Length: 0\r\n"
+            b"Test: Yes!\r\n"
+            b"Test: No!\r\n"
+            b"\r\n"
+        )
+
+    def test_process_responses_explicit_content_length(self, monkeypatch):
+        monkeypatch.setattr(asyncio, "wait_for", lambda coro, *a, **kw: coro)
+
+        request = Request(FakeStreamReader())
+        request.add_bytes(
+            b"GET / HTTP/1.1\r\n"
+            b"Host: example.com\r\n"
+            b"Connection-Length: 0\r\n"
+            b"\r\n"
+        )
+
+        writer = FakeStreamWriter()
+        requests = CloseableQueue()
+        requests.put_nowait(request)
+        requests.close()
+
+        app = asyncio.coroutine(
+            lambda req, body: (
+                b"200 OK",
+                {b"Content-Length": b"10"},
+                [b"12345", b"6789", b"0zzz", b"yyyy"],
+            )
+        )
+
+        protocol = HTTPProtocol(app, loop=pretend.stub())
+
+        sync(protocol.process_responses(writer, requests))
+
+        assert writer.closed
+        assert not writer.buffer
+        assert bytes(writer.drained) == (
+            b"HTTP/1.1 200 OK\r\n"
+            b"Connection: close\r\n"
+            b"Content-Length: 10\r\n"
+            b"\r\n"
+            b"1234567890"
+        )
+
+    def test_process_responses_single_coroutine(self, monkeypatch):
+        monkeypatch.setattr(asyncio, "wait_for", lambda coro, *a, **kw: coro)
+
+        request = Request(FakeStreamReader())
+        request.add_bytes(
+            b"GET / HTTP/1.1\r\n"
+            b"Host: example.com\r\n"
+            b"Connection-Length: 0\r\n"
+            b"\r\n"
+        )
+
+        writer = FakeStreamWriter()
+        requests = CloseableQueue()
+        requests.put_nowait(request)
+        requests.close()
+
+        app = asyncio.coroutine(
+            lambda req, body: (
+                b"200 OK",
+                {},
+                [asyncio.coroutine(lambda: b"abcdefgh")()],
+            )
+        )
+
+        protocol = HTTPProtocol(app, loop=pretend.stub())
+
+        sync(protocol.process_responses(writer, requests))
+
+        assert writer.closed
+        assert not writer.buffer
+        assert bytes(writer.drained) == (
+            b"HTTP/1.1 200 OK\r\n"
+            b"Connection: close\r\n"
+            b"Content-Length: 8\r\n"
+            b"\r\n"
+            b"abcdefgh"
+        )
+
+    def test_process_responses_has_coroutines(self, monkeypatch):
+        monkeypatch.setattr(asyncio, "wait_for", lambda coro, *a, **kw: coro)
+
+        request = Request(FakeStreamReader())
+        request.add_bytes(
+            b"GET / HTTP/1.1\r\n"
+            b"Host: example.com\r\n"
+            b"Connection-Length: 0\r\n"
+            b"\r\n"
+        )
+
+        writer = FakeStreamWriter()
+        requests = CloseableQueue()
+        requests.put_nowait(request)
+        requests.close()
+
+        app = asyncio.coroutine(
+            lambda req, body: (
+                b"200 OK",
+                {},
+                [
+                    asyncio.coroutine(lambda: b"abcdefgh")(),
+                    asyncio.coroutine(lambda: b"abcdefgh")(),
+                ],
+            )
+        )
+
+        protocol = HTTPProtocol(app, loop=pretend.stub())
+
+        sync(protocol.process_responses(writer, requests))
+
+        assert writer.closed
+        assert not writer.buffer
+        assert bytes(writer.drained) == (
+            b"HTTP/1.1 200 OK\r\n"
+            b"Connection: close\r\n"
+            b"\r\n"
+            b"abcdefghabcdefgh"
+        )
+
+    def test_process_responses_throws_away_pending(self, monkeypatch):
+        monkeypatch.setattr(asyncio, "wait_for", lambda coro, *a, **kw: coro)
+
+        request_1 = Request(FakeStreamReader())
+        request_1.add_bytes(
+            b"GET / HTTP/1.1\r\n"
+            b"Host: example.com\r\n"
+            b"Connection-Length: 0\r\n"
+            b"\r\n"
+        )
+
+        request_2 = Request(FakeStreamReader())
+        request_2.add_bytes(
+            b"GET / HTTP/1.1\r\n"
+            b"Host: example.com\r\n"
+            b"Connection-Length: 0\r\n"
+            b"\r\n"
+        )
+
+        writer = FakeStreamWriter()
+        requests = CloseableQueue()
+        requests.put_nowait(request_1)
+        requests.put_nowait(request_2)
+        requests.close()
+
+        app = asyncio.coroutine(
+            lambda req, body: (b"200 OK", {}, [b"abcde", b"fgh"])
+        )
+
+        protocol = HTTPProtocol(app, loop=pretend.stub())
+
+        assert requests.qsize() == 2
+
+        sync(protocol.process_responses(writer, requests))
+
+        assert requests.qsize() == 0
+        assert writer.closed
+        assert not writer.buffer
+        assert bytes(writer.drained) == (
+            b"HTTP/1.1 200 OK\r\n"
+            b"Connection: close\r\n"
+            b"\r\n"
+            b"abcdefgh"
+        )
+
+    def test_process_responses_multiple_correct_order(self, monkeypatch):
+        monkeypatch.setattr(asyncio, "wait_for", lambda coro, *a, **kw: coro)
+
+        request_1 = Request(FakeStreamReader())
+        request_1.add_bytes(
+            b"GET / HTTP/1.1\r\n"
+            b"Host: example.com\r\n"
+            b"Connection-Length: 0\r\n"
+            b"\r\n"
+        )
+
+        request_2 = Request(FakeStreamReader())
+        request_2.add_bytes(
+            b"GET /foo/bar/ HTTP/1.1\r\n"
+            b"Host: example.com\r\n"
+            b"Connection-Length: 0\r\n"
+            b"\r\n"
+        )
+
+        writer = FakeStreamWriter()
+        requests = CloseableQueue()
+        requests.put_nowait(request_1)
+        requests.put_nowait(request_2)
+        requests.close()
+
+        app = asyncio.coroutine(
+            lambda req, body: (b"200 OK", {b"URL": req.path}, [b"abcdefgh"])
+        )
+
+        protocol = HTTPProtocol(app, loop=pretend.stub())
+
+        assert requests.qsize() == 2
+
+        sync(protocol.process_responses(writer, requests))
+
+        assert requests.qsize() == 0
+        assert writer.closed
+        assert not writer.buffer
+        assert bytes(writer.drained) == (
+            b"HTTP/1.1 200 OK\r\n"
+            b"Content-Length: 8\r\n"
+            b"URL: /\r\n"
+            b"\r\n"
+            b"abcdefgh"
+            b"HTTP/1.1 200 OK\r\n"
+            b"Connection: close\r\n"
+            b"Content-Length: 8\r\n"
+            b"URL: /foo/bar/\r\n"
+            b"\r\n"
+            b"abcdefgh"
+        )
 
 
 class TestHTTPServer:
