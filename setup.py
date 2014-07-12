@@ -17,6 +17,7 @@ from distutils.command.build import build
 from distutils.command.build_clib import build_clib
 
 from setuptools import find_packages, setup
+from setuptools.command.develop import develop
 from setuptools.command.install import install
 
 
@@ -104,6 +105,15 @@ class HTTP1BuildCLib(build_clib):
         return ret
 
 
+class CLibDevelop(develop):
+
+    def install_for_development(self):
+        # We need to build our clib prior to building our ext
+        self.run_command("build_clib")
+
+        develop.install_for_development(self)
+
+
 meta = {}
 with open("fenrir/__init__.py") as fp:
     exec(fp.read(), meta)
@@ -161,6 +171,7 @@ setup(
     cmdclass={
         "build": CFFIBuild,
         "build_clib": HTTP1BuildCLib,
+        "develop": CLibDevelop,
         "install": CFFIInstall,
     }
 )
