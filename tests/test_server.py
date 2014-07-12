@@ -72,18 +72,20 @@ class TestServer:
         wait = pretend.call_recorder(lambda coros: wait_coro)
 
         httpserver_obj = pretend.call()
-        HTTPServer = pretend.call_recorder(lambda app, **kw: httpserver_obj)
+        httpserver_cls = pretend.call_recorder(
+            lambda app, **kw: httpserver_obj
+        )
 
         monkeypatch.setattr(asyncio, "get_event_loop", get_event_loop)
         monkeypatch.setattr(asyncio, "wait", wait)
-        monkeypatch.setattr(server, "HTTPServer", HTTPServer)
+        monkeypatch.setattr(server, "HTTPServer", httpserver_cls)
 
         app = pretend.stub()
         s = server.Server(app, bind=["127.0.0.1:4000", "0.0.0.0"])
         s.spawn()
 
         assert get_event_loop.calls == [pretend.call()]
-        assert HTTPServer.calls == [
+        assert httpserver_cls.calls == [
             pretend.call(app, loop=loop),
             pretend.call(app, loop=loop),
         ]
