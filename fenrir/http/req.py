@@ -51,7 +51,7 @@ class Request:
         if not data:
             return
 
-        self._parser.execute(data)
+        parsed = self._parser.execute(data)
 
         # If our headers are complete, feed any data we've gotten past the
         # headers into our body.
@@ -64,6 +64,9 @@ class Request:
             # more to read.
             if self.received:
                 self.body.feed_eof()
+
+        # Return any data that we haven't parsed
+        return data[parsed:]
 
     def as_params(self):
         # TODO: This needs to not expose this class which is an internal detail

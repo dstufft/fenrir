@@ -75,25 +75,34 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
     @asyncio.coroutine
     def process_data(self, reader, requests):
         try:
-            while not reader.at_eof() and not requests.closed:
+            data = None
+
+            while (not reader.at_eof() or data) and not requests.closed:
                 request = Request(body=asyncio.StreamReader(loop=self._loop))
                 request_queued = False
 
-                while (not request.received
-                        and not (reader.at_eof()
-                                 and not request.headers_complete)):
+                while not request.received and (not reader.at_eof() or data):
                     try:
                         # TODO: What is the best size chunk to read here? What
                         #       will happen if there isn't enough data in the
                         #       buffer to read all of the data we've requested?
-                        request.add_bytes((yield from reader.read(4096)))
+                        if not data:
+                            data = yield from reader.read(4096)
+
+                        # The request.add_bytes method will return any unparsed
+                        # bytes, we'll reassign it to our data variable so that
+                        # we can use it the next time around to parse.
+                        data = request.add_bytes(data)
                     except BadRequest as exc:
                         # We've gotten a bad request. We're going to stop
                         # processing requests and close our queue after putting
                         # our BadRequest onto the queue.
                         yield from requests.put(exc)
                         requests.close()
-                        break
+
+                        # The peephole optimizer is causing coverage.py to
+                        # think that the below statement is never executed.
+                        break  # pragma: no cover
 
                     # If we've finished our headers, then go ahead and add our
                     # item to our request queue so that our writer coroutine
@@ -119,7 +128,8 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
                     # as received because HTTP/1.1 provides mechanisms other
                     # than connection close for determining if a request is
                     # finished.
-                    if request.headers_complete and reader.at_eof():
+                    if (request.headers_complete
+                            and reader.at_eof() and not data):
                         request.body.feed_eof()
                         break
         finally:

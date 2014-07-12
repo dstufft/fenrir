@@ -14,12 +14,53 @@ import asyncio
 
 import pretend
 
+from fenrir.http.errors import BadRequest
+from fenrir.http.req import Request
 from fenrir.protocol import HTTPProtocol, HTTPServer
 from fenrir.queues import CloseableQueue
 
 
+def sync(coro):
+    if asyncio.iscoroutine(coro):
+        try:
+            next(coro)
+        except StopIteration as exc:
+            return exc.value
+    else:
+        return coro
+
+
 class StringTransport(asyncio.Transport):
     pass
+
+
+class FakeStreamReader:
+
+    def __init__(self, loop=None):
+        self._eof = False
+        self._buffer = bytearray()
+        self._loop = loop
+
+    def at_eof(self):
+        return not self._buffer and self._eof
+
+    def feed_data(self, data):
+        assert not self._eof
+        self._buffer.extend(data)
+
+    def feed_eof(self):
+        self._eof = True
+
+    @asyncio.coroutine
+    def read(self, size=None):
+        if size is None:
+            data = self._buffer[:]
+            self._buffer = bytearray()
+        else:
+            data = self._buffer[:size]
+            self._buffer = self._buffer[size:]
+
+        return bytes(data)
 
 
 class TestHTTPProtocol:
@@ -145,6 +186,195 @@ class TestHTTPProtocol:
         protocol.eof_received()
 
         assert protocol.reader.feed_eof.calls == [pretend.call()]
+
+    def test_process_data(self, monkeypatch):
+        monkeypatch.setattr(asyncio, "StreamReader", FakeStreamReader)
+
+        reader = FakeStreamReader()
+        requests = CloseableQueue(loop=pretend.stub())
+
+        reader.feed_data(
+            b"GET / HTTP/1.1\r\n"
+            b"Host: example.com\r\n"
+            b"\r\n"
+        )
+        reader.feed_eof()
+
+        protocol = HTTPProtocol(pretend.stub(), loop=pretend.stub())
+
+        assert not reader.at_eof()
+        assert not requests.closed
+
+        sync(protocol.process_data(reader, requests))
+
+        assert reader.at_eof()
+        assert requests.closed
+        assert requests.qsize() == 1
+
+        request = requests.get_nowait()
+
+        assert isinstance(request, Request)
+
+    def test_process_data_bad_request(self, monkeypatch):
+        monkeypatch.setattr(asyncio, "StreamReader", FakeStreamReader)
+
+        reader = FakeStreamReader()
+        requests = CloseableQueue(loop=pretend.stub())
+
+        reader.feed_data(
+            b"GET / HTTP/1.1\r\n"
+            b"Host: example.com\r\n"
+            b"Content-Length: invalid\r\n"
+            b"\r\n"
+        )
+        reader.feed_eof()
+
+        protocol = HTTPProtocol(pretend.stub(), loop=pretend.stub())
+
+        assert not reader.at_eof()
+        assert not requests.closed
+
+        sync(protocol.process_data(reader, requests))
+
+        assert reader.at_eof()
+        assert requests.closed
+        assert requests.qsize() == 1
+
+        request = requests.get_nowait()
+
+        assert isinstance(request, BadRequest)
+
+    def test_process_data_multiple_requests(self, monkeypatch):
+        monkeypatch.setattr(asyncio, "StreamReader", FakeStreamReader)
+
+        reader = FakeStreamReader()
+        requests = CloseableQueue(loop=pretend.stub())
+
+        reader.feed_data(
+            b"GET / HTTP/1.1\r\n"
+            b"Host: example.com\r\n"
+            b"Content-Length: 0\r\n"
+            b"\r\n"
+            b"GET / HTTP/1.1\r\n"
+            b"Host: example.com\r\n"
+            b"Content-Length: 0\r\n"
+            b"\r\n"
+        )
+        reader.feed_eof()
+
+        protocol = HTTPProtocol(pretend.stub(), loop=pretend.stub())
+
+        assert not reader.at_eof()
+        assert not requests.closed
+
+        sync(protocol.process_data(reader, requests))
+
+        assert reader.at_eof()
+        assert requests.closed
+        assert requests.qsize() == 2
+
+        assert all(
+            isinstance(requests.get_nowait(), Request)
+            for r in range(requests.qsize())
+        )
+
+    def test_process_data_http10_implicit_close(self, monkeypatch):
+        monkeypatch.setattr(asyncio, "StreamReader", FakeStreamReader)
+
+        reader = FakeStreamReader()
+        requests = CloseableQueue(loop=pretend.stub())
+
+        reader.feed_data(
+            b"GET / HTTP/1.0\r\n"
+            b"Host: example.com\r\n"
+            b"Content-Length: 0\r\n"
+            b"\r\n"
+            b"GET / HTTP/1.0\r\n"
+            b"Host: example.com\r\n"
+            b"Content-Length: 0\r\n"
+            b"\r\n"
+        )
+        reader.feed_eof()
+
+        protocol = HTTPProtocol(pretend.stub(), loop=pretend.stub())
+
+        assert not reader.at_eof()
+        assert not requests.closed
+
+        sync(protocol.process_data(reader, requests))
+
+        assert reader.at_eof()
+        assert requests.closed
+        assert requests.qsize() == 1
+
+        request = requests.get_nowait()
+
+        assert isinstance(request, Request)
+
+    def test_process_data_http11_connection_close(self, monkeypatch):
+        monkeypatch.setattr(asyncio, "StreamReader", FakeStreamReader)
+
+        reader = FakeStreamReader()
+        requests = CloseableQueue(loop=pretend.stub())
+
+        reader.feed_data(
+            b"GET / HTTP/1.1\r\n"
+            b"Host: example.com\r\n"
+            b"Content-Length: 0\r\n"
+            b"Connection: close\r\n"
+            b"\r\n"
+            b"GET / HTTP/1.1\r\n"
+            b"Host: example.com\r\n"
+            b"Content-Length: 0\r\n"
+            b"\r\n"
+        )
+        reader.feed_eof()
+
+        protocol = HTTPProtocol(pretend.stub(), loop=pretend.stub())
+
+        assert not reader.at_eof()
+        assert not requests.closed
+
+        sync(protocol.process_data(reader, requests))
+
+        assert reader.at_eof()
+        assert requests.closed
+        assert requests.qsize() == 1
+
+        request = requests.get_nowait()
+
+        assert isinstance(request, Request)
+
+    def test_process_data_larger_one_read(self, monkeypatch):
+        monkeypatch.setattr(asyncio, "StreamReader", FakeStreamReader)
+
+        reader = FakeStreamReader()
+        requests = CloseableQueue(loop=pretend.stub())
+
+        reader.feed_data(
+            b"GET / HTTP/1.1\r\n"
+            b"Host: example.com\r\n"
+            b"Content-Length: 8192\r\n"
+            b"Connection: close\r\n"
+            b"\r\n"
+        )
+        reader.feed_data(b"0" * 8192)
+        reader.feed_eof()
+
+        protocol = HTTPProtocol(pretend.stub(), loop=pretend.stub())
+
+        assert not reader.at_eof()
+        assert not requests.closed
+
+        sync(protocol.process_data(reader, requests))
+
+        assert reader.at_eof()
+        assert requests.closed
+        assert requests.qsize() == 1
+
+        request = requests.get_nowait()
+
+        assert isinstance(request, Request)
 
 
 class TestHTTPServer:
