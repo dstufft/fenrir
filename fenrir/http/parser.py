@@ -13,6 +13,7 @@
 import zero_buffer
 
 from fenrir.http import http11
+from fenrir.http.errors import BadRequest
 
 
 class HTTPParser:
@@ -57,13 +58,73 @@ class HTTPParser:
     @property
     def completed(self):
         return (self.headers_complete
-                and (not int(self.headers.get(b"Content-Length", 0))
+                and (not self.body_length
                      or (self._buffer is not None
                          and self._buffer.writepos >= self._buffer.capacity)))
 
     @property
     def has_body(self):
         return self._buffer is not None
+
+    @property
+    def body_length(self):
+        # According to RFC 7230 section 3.3.3 the message body length of a
+        # request follows these rules:
+        #
+        # 1. If a Transfer-Encoding header field is present and the chunked
+        #    transfer coding (Section 4.1) is the final encoding, the message
+        #    body length is determined by reading and decoding the chunked data
+        #    until the transfer coding indicates the data is complete.
+        #
+        #    If a Transfer-Encoding header field is present in a request and
+        #    the chunked transfer coding is not the final encoding, the message
+        #    body length cannot be determined reliably; the server MUST respond
+        #    with the 400 (Bad Request) status code and then close the
+        #    connection.
+        #
+        #    If a message is received with both a Transfer-Encoding and a
+        #    Content-Length header field, the Transfer-Encoding overrides the
+        #    Content-Length. Such a message might indicate an attempt to
+        #    perform request smuggling (Section 9.5) or response splitting
+        #    (Section 9.4) and ought to be handled as an error.
+        #
+        # 2. If a message is received without Transfer-Encoding and with either
+        #    multiple Content-Length header fields having differing
+        #    field-values or a single Content-Length header field having an
+        #    invalid value, then the message framing is invalid and the
+        #    recipient MUST treat it as an unrecoverable error. If this is a
+        #    request message, the server MUST respond with a 400 (Bad Request)
+        #    status code and then close the connection.
+        #
+        # 3. If a valid Content-Length header field is present without
+        #    Transfer-Encoding, its decimal value defines the expected message
+        #    body length in octets. If the sender closes the connection or the
+        #    recipient times out before the indicated number of octets are
+        #    received, the recipient MUST consider the message to be incomplete
+        #    and close the connection.
+        #
+        # 4. If this is a request message and none of the above are true, then
+        #    the message body length is zero (no message body is present).
+        #
+        # TODO: This needs to handle Transfer-Encoding: chunked
+        # TODO: This needs to handle the case where there are multiple
+        #       Content-Length headers.
+        # TODO: Should we sometimes mandate a Content-Length?
+
+        assert self.headers_complete, (
+            "Cannot determine body length without the headers"
+        )
+
+        content_length = self.headers.get(b"Content-Length", 0)
+        try:
+            content_length = int(content_length)
+        except ValueError:
+            raise BadRequest
+
+        if content_length >= 0:
+            return content_length
+        else:
+            raise BadRequest
 
     def _cb_http_version(self, data, at, length):
         # Will this always be NULL? I have no idea about it seems to be, so
@@ -160,20 +221,11 @@ class HTTPParser:
 
         # If we have finished parsing the headers, then we are parsing the
         # body, however we only need to actually parse the body if we have one.
-        # For HTTP/1.1 we mandate a Content-Length for requests or else we
-        # assume 0.
-        # TODO: Verify that the Content-Length Mandate is accurate, and add
-        #       references to that fact.
-        # TODO: We should probably be smart about turning Content-Length into
-        #       and integer and not just blindly int() it.
-        if (self.headers_complete
-                and int(self.headers.get(b"Content-Length", 0))):
+        if self.headers_complete and self.body_length:
             # If we haven't created a buffer yet, then go ahead and create one
             # which has enough room for our entire request body.
             if self._buffer is None:
-                self._buffer = zero_buffer.Buffer.allocate(
-                    int(self.headers[b"Content-Length"]),
-                )
+                self._buffer = zero_buffer.Buffer.allocate(self.body_length)
 
             # We need to figure out the correct offset from our data, this
             # should be our original offset, plus any data that we've parsed

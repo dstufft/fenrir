@@ -14,6 +14,7 @@ import asyncio
 
 from asyncio.streams import FlowControlMixin
 
+from fenrir.http.errors import HTTPError, BadRequest
 from fenrir.http.req import Request
 from fenrir.queues import CloseableQueue
 
@@ -81,10 +82,18 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
                 while (not request.received
                         and not (reader.at_eof()
                                  and not request.headers_complete)):
-                    # TODO: What is the best size chunk to read here? What will
-                    #       happen if there isn't enough data in the buffer to
-                    #       read all of the data we've requested?
-                    request.add_bytes((yield from reader.read(4096)))
+                    try:
+                        # TODO: What is the best size chunk to read here? What
+                        #       will happen if there isn't enough data in the
+                        #       buffer to read all of the data we've requested?
+                        request.add_bytes((yield from reader.read(4096)))
+                    except BadRequest as exc:
+                        # We've gotten a bad request. We're going to stop
+                        # processing requests and close our queue after putting
+                        # our BadRequest onto the queue.
+                        yield from requests.put(exc)
+                        requests.close()
+                        break
 
                     # If we've finished our headers, then go ahead and add our
                     # item to our request queue so that our writer coroutine
@@ -133,11 +142,19 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
                     # chance for the while loop to be reevaluated.
                     continue
 
-                # Now that we have a request, we'll want to dispatch to our
-                # app.
-                status, resp_headers, body = (
-                    yield from self.app(*request.as_params())
-                )
+                # Determine if we've gotten an actual request, or if we've
+                # gotten and HTTPError.
+                if isinstance(request, HTTPError):
+                    # Since we've gotten an HTTPError instead of a request, we
+                    # want to just use that as a response instead of actually
+                    # trying to call our app function.
+                    status, resp_headers, body = request.as_response()
+                else:
+                    # Now that we have a request, we'll want to dispatch to our
+                    # app.
+                    status, resp_headers, body = (
+                        yield from self.app(*request.as_params())
+                    )
 
                 # Write out the status line to the client for this request
                 writer.write(request.http_version + b" " + status + b"\r\n")
