@@ -13,6 +13,7 @@
 import pretend
 import pytest
 
+from fenrir.http.errors import BadRequest
 from fenrir.http.req import Request
 
 
@@ -21,6 +22,7 @@ class FakeParser:
     def __init__(self, received_at=None):
         self.data = []
         self.body = []
+        self.headers = {}
         self.headers_complete = False
         self.body_length = 0
         self.completed = False
@@ -104,6 +106,7 @@ class TestRequest:
 
         assert req._parser.data == [b"abc", b"zdefgh"]
 
+        req._parser.headers[b"Host"] = b"example.com"
         req._parser.headers_complete = True
         req._parser.body_length = 9
 
@@ -122,12 +125,42 @@ class TestRequest:
         req = Request(FakeStreamReader())
         req._parser = FakeParser(received_at=1)
         req._parser.headers_complete = True
+        req._parser.headers[b"Host"] = b"example.com"
         req._parser.body_length = 0
 
         req.add_bytes(b"123")
 
         assert req.body.data == []
         assert req.body.eof
+
+    def test_request_validates(self):
+        req = Request(FakeStreamReader())
+        req._parser = FakeParser(received_at=1)
+        req._parser.headers_complete = True
+        req._parser.headers[b"Host"] = b"example.com"
+        req._parser.body_length = 3
+
+        req.add_bytes(b"123")
+
+        assert req._validated
+
+    def test_validate_fails_no_host(self):
+        req = Request(FakeStreamReader())
+        req._parser = FakeParser()
+        req._parser.headers_complete = True
+
+        with pytest.raises(BadRequest):
+            req.validate()
+
+    def test_validate_succeeds(self):
+        req = Request(FakeStreamReader())
+        req._parser = FakeParser()
+        req._parser.headers_complete = True
+        req._parser.headers[b"Host"] = b"example.com"
+
+        req.validate()
+
+        assert req._validated
 
     def test_request_as_params(self):
         body = pretend.stub()

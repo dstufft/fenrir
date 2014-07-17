@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from fenrir.http.errors import BadRequest
 from fenrir.http.parser import HTTPParser
 
 
@@ -17,6 +18,7 @@ class Request:
 
     def __init__(self, body):
         self._parser = HTTPParser()
+        self._validated = False
         self.body = body
 
     @property
@@ -56,6 +58,10 @@ class Request:
         # If our headers are complete, feed any data we've gotten past the
         # headers into our body.
         if self.headers_complete:
+            # Validate our request if it hasn't already been validated.
+            if not self._validated:
+                self.validate()
+
             if self._parser.body_length:
                 self.body.feed_data(self._parser.recv_body())
 
@@ -67,6 +73,24 @@ class Request:
 
         # Return any data that we haven't parsed
         return data[parsed:]
+
+    def validate(self):
+        assert self.headers_complete, (
+            "Cannot validate a request until all headers are received"
+        )
+
+        # RFC 7230 Section 5.4 - Ensure Host Header
+        #   HTTP/1.1 mandates the existence of a Host header on all requests,
+        #   while HTTP/1.0 does not, however due to the critical nature of
+        #   the Host header for virtual hosting nearly all HTTP/1.0 clients
+        #   will send a Host header anyways. We will be strict here and mandate
+        #   it for all requests.
+        # TODO: Should the *value* of the Host header have any sort of
+        #       validation?
+        if b"Host" not in self.headers:
+            raise BadRequest
+
+        self._validated = True
 
     def as_params(self):
         # TODO: This needs to not expose this class which is an internal detail
