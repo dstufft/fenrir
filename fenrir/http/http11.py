@@ -148,3 +148,10 @@ class Library:
 # load the library until the first time a method is actually called on the
 # lib, instead of when the lib is created/verified.
 lib = Library(ffi)
+
+
+# A few constants just to make things a bit cleaner
+PARSER_ERROR = -1
+PARSER_INCOMPLETE = 0
+PARSER_COMPLETE = 1
+PARSER_STATES = {PARSER_ERROR, PARSER_INCOMPLETE, PARSER_COMPLETE}

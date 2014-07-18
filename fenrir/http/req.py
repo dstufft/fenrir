@@ -13,7 +13,7 @@
 import collections.abc
 
 from fenrir.http.errors import BadRequest
-from fenrir.http.parser import HTTPParser
+from fenrir.http.parser import HTTPParser, ParseError
 
 
 def _header_parse(value, delim=b","):
@@ -121,7 +121,10 @@ class Request:
         if not data:
             return
 
-        parsed = self._parser.execute(data)
+        try:
+            parsed = self._parser.execute(data)
+        except ParseError:
+            raise BadRequest from None
 
         # If our headers are complete, feed any data we've gotten past the
         # headers into our body.

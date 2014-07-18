@@ -17,6 +17,10 @@ import zero_buffer
 from fenrir.http import http11
 
 
+class ParseError(ValueError):
+    pass
+
+
 class HTTPParser:
 
     def __init__(self):
@@ -44,7 +48,6 @@ class HTTPParser:
         # Create our callback functions, these are FFI callback instances which
         # we store on our instance because if we allow them to get garbage
         # collected before they're called by the C code.
-        self._cb_header_done = http11.element_cb(self._cb_header_done)
         self._cb_http_version = http11.element_cb(self._cb_http_version)
         self._cb_request_method = http11.element_cb(self._cb_request_method)
         self._cb_request_path = http11.element_cb(self._cb_request_path)
@@ -52,7 +55,6 @@ class HTTPParser:
         self._cb_http_field = http11.field_cb(self._cb_http_field)
 
         # Actually register our callbacks with our http_parser instance
-        self._parser.header_done = self._cb_header_done
         self._parser.http_version = self._cb_http_version
         self._parser.request_method = self._cb_request_method
         self._parser.request_path = self._cb_request_path
@@ -144,15 +146,6 @@ class HTTPParser:
         # Actually add the parsed value to our stored headers
         self.headers[field].append(value)
 
-    def _cb_header_done(self, data, at, length):
-        # Will this always be NULL? I have no idea about it seems to be, so
-        # we'll assert against it being NULL just to make sure.
-        assert data == http11.ffi.NULL
-
-        # Now that the headers have been parsed we can mark this has having
-        # been completed.
-        self.headers_complete = True
-
     def recv_body(self):
         # Calling recv_body before we've received any body data is invalid so
         # we'll assert that we have a buffer.
@@ -188,6 +181,15 @@ class HTTPParser:
             parsed = http11.lib.http_parser_execute(
                 self._parser, data, length, offset,
             )
+
+            # Determine if we've completed parsing our request headers, or if
+            # there has been an error during the processing of our request.
+            parser_state = http11.lib.http_parser_finish(self._parser)
+            assert parser_state in http11.PARSER_STATES
+            if parser_state == http11.PARSER_COMPLETE:
+                self.headers_complete = True
+            elif parser_state == http11.PARSER_ERROR:
+                raise ParseError
 
             # The mongrel2 HTTP/1.1 parser returns the total number of bytes
             # parsed. We want to only include the amount parsed *this* time so
