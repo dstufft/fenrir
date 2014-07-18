@@ -34,7 +34,7 @@ class Library:
 
     def __init__(self, ffi):
         self.ffi = ffi
-        self.lib = None
+        self._lib = None
 
         # This prevents the compile_module() from being called, the module
         # should have been compiled by setup.py
@@ -43,9 +43,11 @@ class Library:
         self.ffi.verifier.compile_module = _compile_module
         self.ffi.verifier._compile_module = _compile_module
 
-    def __getattr__(self, name):
-        if not self.lib:
-            self.lib = self.ffi.verifier.load_library()
+    @property
+    def lib(self):
+        if self._lib is None:
+            self._lib = self.ffi.verifier.load_library()
+        return self._lib
 
-        # redirect attribute access to the underlying lib
+    def __getattr__(self, name):
         return getattr(self.lib, name)
