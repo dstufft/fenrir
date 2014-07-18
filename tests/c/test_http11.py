@@ -13,7 +13,7 @@
 import pretend
 import pytest
 
-from fenrir.http.http11 import Library
+from fenrir.c.http11 import Library
 
 
 class TestLibrary:

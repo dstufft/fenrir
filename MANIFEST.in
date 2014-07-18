@@ -12,4 +12,4 @@ exclude .travis.yml
 exclude .coverage
 exclude .coveragerc
 
-prune fenrir/http/__pycache__
+prune fenrir/c/__pycache__

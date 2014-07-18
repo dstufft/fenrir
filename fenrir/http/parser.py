@@ -14,7 +14,7 @@ import collections
 
 import zero_buffer
 
-from fenrir.http import http11
+from fenrir.c import http11
 
 
 class ParseError(ValueError):
