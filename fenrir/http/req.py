@@ -160,7 +160,8 @@ class Request:
         #   it for all requests.
         # TODO: Should the *value* of the Host header have any sort of
         #       validation?
-        if b"Host" not in self.headers:
+        if (b"Host" not in self.headers
+                or len(set(self.headers[b"Host"].split(b","))) > 1):
             raise BadRequest
 
         self._validated = True

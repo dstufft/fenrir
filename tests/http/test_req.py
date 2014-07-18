@@ -233,10 +233,30 @@ class TestRequestValidation:
         with pytest.raises(BadRequest):
             req.validate()
 
-    def test_fails_no_host(self):
+    @pytest.mark.parametrize(
+        "host",
+        [
+            None,
+            [b"example.com", b"example2.com"],
+        ]
+    )
+    def test_fails_invalid_host(self, host):
         req = Request(FakeStreamReader())
         req._parser = FakeParser()
         req._parser.headers_complete = True
 
+        if host is not None:
+            req._parser.headers[b"Host"] = host
+
         with pytest.raises(BadRequest):
             req.validate()
+
+    def test_succeeds_multiple_valid_hosts(self):
+        req = Request(FakeStreamReader())
+        req._parser = FakeParser()
+        req._parser.headers_complete = True
+        req._parser.headers[b"Host"] = [b"example.com", b"example.com"]
+
+        req.validate()
+
+        assert req._validated
