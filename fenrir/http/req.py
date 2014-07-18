@@ -16,6 +16,25 @@ from fenrir.http.errors import BadRequest
 from fenrir.http.parser import HTTPParser
 
 
+def _header_parse(value, delim=b","):
+    # Escape any quotes inside of the value if there are quotes in it and we
+    # need to quote it because of a delimiter character.
+    if b"\"" in value and delim in value:
+        value = value.replace(b"\"", b"\\\"")
+
+    if delim in value:
+        value = b"\"" + value + b"\""
+
+    return value
+
+
+def _header_join(header, values):
+    if header.lower() == b"cookie":
+        return b"; ".join(_header_parse(v, b";") for v in values)
+    else:
+        return b",".join(_header_parse(v) for v in values)
+
+
 class Headers(collections.abc.Mapping):
 
     def __init__(self, headers):
@@ -23,7 +42,7 @@ class Headers(collections.abc.Mapping):
             if not isinstance(key, bytes):
                 raise TypeError("Headers only supports bytes for keys.")
 
-        self._raw_headers = headers
+        self._raw_headers = {k: _header_join(k, v) for k, v in headers.items()}
         self._normalized_keys = {k.lower(): k for k in self._raw_headers}
 
     def __repr__(self):
@@ -90,6 +109,14 @@ class Request:
     def received(self):
         return self._parser.completed
 
+    @property
+    def close_connection(self):
+        return (self.http_version == b"HTTP/1.0"
+                or b"close" in set(
+                    x for x in self.headers.get(b"Connection", b"").split(b",")
+                    if x
+                ))
+
     def add_bytes(self, data):
         if not data:
             return
@@ -141,7 +168,8 @@ class Request:
         #   it for all requests.
         # TODO: Should the *value* of the Host header have any sort of
         #       validation?
-        if b"Host" not in self.headers:
+        if (b"Host" not in self.headers
+                or len(set(self.headers[b"Host"].split(b","))) > 1):
             raise BadRequest
 
         self._validated = True

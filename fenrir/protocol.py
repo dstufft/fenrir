@@ -115,11 +115,7 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
                         # this connection because the client either doesn't
                         # support HTTP/1.1 or has signaled to use that they are
                         # closing the connection after this request/response.
-                        # TODO: We need to parse this so that we support
-                        #       multiple connection options.
-                        if (request.http_version == b"HTTP/1.0"
-                            or request.headers.get(b"Connection", None)
-                                == b"close"):
+                        if request.close_connection:
                             requests.close()
 
                     # If we're in the body portion of our request and we've
@@ -246,8 +242,13 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
                     if isinstance(values, (bytes, bytearray)):
                         values = [values]
 
-                    for value in values:
-                        writer.write(key + b": " + value + b"\r\n")
+                    # Special case Set-Cookie because it cannot be collapsed
+                    # normally, by joining with commas.
+                    if key.lower() == b"set-cookie":
+                        for value in values:
+                            writer.write(key + b": " + value + b"\r\n")
+                    else:
+                        writer.write(key + b": " + b",".join(values) + b"\r\n")
 
                 # Before we get to the body, we need to write a blank line to
                 # separate the headers and the response body
