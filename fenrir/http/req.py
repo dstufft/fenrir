@@ -10,8 +10,41 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import collections.abc
+
 from fenrir.http.errors import BadRequest
 from fenrir.http.parser import HTTPParser
+
+
+class Headers(collections.abc.Mapping):
+
+    def __init__(self, headers):
+        for key in headers:
+            if not isinstance(key, bytes):
+                raise TypeError("Headers only supports bytes for keys.")
+
+        self._raw_headers = headers
+        self._normalized_keys = {k.lower(): k for k in self._raw_headers}
+
+    def __repr__(self):
+        return "<Headers {}>".format(self._raw_headers)
+
+    def __getitem__(self, key):
+        if not isinstance(key, bytes):
+            raise TypeError("Headers only supports bytes for keys.")
+
+        real_key = self._normalized_keys.get(key.lower(), None)
+
+        if real_key is None:
+            raise KeyError(key)
+
+        return self._raw_headers[real_key]
+
+    def __iter__(self):
+        return iter(self._raw_headers)
+
+    def __len__(self):
+        return len(self._raw_headers)
 
 
 class Request:
@@ -19,6 +52,7 @@ class Request:
     def __init__(self, body):
         self._parser = HTTPParser()
         self._validated = False
+        self._headers = None
         self.body = body
 
     @property
@@ -39,7 +73,14 @@ class Request:
 
     @property
     def headers(self):
-        return self._parser.headers
+        assert self.headers_complete, (
+            "Headers must be complete before accessing them."
+        )
+
+        if self._headers is None:
+            self._headers = Headers(self._parser.headers)
+
+        return self._headers
 
     @property
     def headers_complete(self):
@@ -78,6 +119,19 @@ class Request:
         assert self.headers_complete, (
             "Cannot validate a request until all headers are received"
         )
+
+        # RFC 7230 Section 3.3.3 - Ensure Valid Content-Length
+        #   If the Content-Length is specified then it must be a valid value,
+        #   this means it must be an integer and it must be >= 0.
+        content_length = self.headers.get(b"Content-Length")
+        if content_length is not None:
+            try:
+                content_length = int(content_length)
+            except ValueError:
+                raise BadRequest from None
+
+            if content_length < 0:
+                raise BadRequest
 
         # RFC 7230 Section 5.4 - Ensure Host Header
         #   HTTP/1.1 mandates the existence of a Host header on all requests,

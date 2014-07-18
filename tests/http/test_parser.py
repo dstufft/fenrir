@@ -12,7 +12,6 @@
 
 import pytest
 
-from fenrir.http.errors import BadRequest
 from fenrir.http.parser import HTTPParser
 
 
@@ -20,7 +19,7 @@ class TestHTTPParser:
 
     def test_body_length(self):
         parser = HTTPParser()
-        parser.headers = {b"Content-Length": b"15"}
+        parser._content_length = b"15"
         parser.headers_complete = True
 
         assert parser.body_length == 15
@@ -35,11 +34,10 @@ class TestHTTPParser:
     )
     def test_body_length_invalid(self, length):
         parser = HTTPParser()
-        parser.headers = {b"Content-Length": length}
+        parser._content_length = length
         parser.headers_complete = True
 
-        with pytest.raises(BadRequest):
-            parser.body_length
+        assert parser.body_length == 0
 
     def test_body_length_defaults_zero(self):
         parser = HTTPParser()
