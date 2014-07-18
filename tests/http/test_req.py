@@ -14,7 +14,7 @@ import pretend
 import pytest
 
 from fenrir.http.errors import BadRequest
-from fenrir.http.req import Request
+from fenrir.http.req import Headers, Request
 
 
 class FakeParser:
@@ -60,6 +60,31 @@ class FakeStreamReader:
         self.eof = True
 
 
+class TestHeaders:
+
+    def test_init_only_allows_bytes(self):
+        with pytest.raises(TypeError):
+            Headers({"str": None})
+
+    def test_only_allows_bytes_keys(self):
+        h = Headers({})
+
+        with pytest.raises(TypeError):
+            h["Invalid Key"]
+
+    def test_repr(self):
+        r = repr(Headers({b"Content-Length": b"100"}))
+        assert r == "<Headers {}>".format({b"Content-Length": b"100"})
+
+    def test_iter(self):
+        h = Headers({b"Content-Length": b"100", b"Host": b"example.com"})
+        assert set(h) == {b"Content-Length", b"Host"}
+
+    def test_len(self):
+        h = Headers({b"Content-Length": b"100", b"Host": b"example.com"})
+        assert len(h) == 2
+
+
 class TestRequest:
 
     def test_request_body(self):
@@ -73,7 +98,6 @@ class TestRequest:
             ("method", ...),
             ("path", ...),
             ("query", ...),
-            ("headers", ...),
             ("headers_complete", ...),
             ("received", "completed"),
         ],
@@ -144,15 +168,16 @@ class TestRequest:
 
         assert req._validated
 
-    def test_validate_fails_no_host(self):
-        req = Request(FakeStreamReader())
-        req._parser = FakeParser()
-        req._parser.headers_complete = True
+    def test_request_as_params(self):
+        body = pretend.stub()
+        req = Request(body)
 
-        with pytest.raises(BadRequest):
-            req.validate()
+        assert req.as_params() == (req, body)
 
-    def test_validate_succeeds(self):
+
+class TestRequestValidation:
+
+    def test_succeeds(self):
         req = Request(FakeStreamReader())
         req._parser = FakeParser()
         req._parser.headers_complete = True
@@ -162,8 +187,27 @@ class TestRequest:
 
         assert req._validated
 
-    def test_request_as_params(self):
-        body = pretend.stub()
-        req = Request(body)
+    @pytest.mark.parametrize(
+        "content_length",
+        [
+            b"-1",
+            b"\xe2\x98\x83",
+        ],
+    )
+    def test_fails_invalid_content_length(self, content_length):
+        req = Request(FakeStreamReader())
+        req._parser = FakeParser()
+        req._parser.headers_complete = True
+        req._parser.headers[b"Content-Length"] = content_length
+        req._parser.headers[b"Host"] = b"example.com"
 
-        assert req.as_params() == (req, body)
+        with pytest.raises(BadRequest):
+            req.validate()
+
+    def test_fails_no_host(self):
+        req = Request(FakeStreamReader())
+        req._parser = FakeParser()
+        req._parser.headers_complete = True
+
+        with pytest.raises(BadRequest):
+            req.validate()

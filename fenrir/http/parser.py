@@ -13,7 +13,6 @@
 import zero_buffer
 
 from fenrir.http import http11
-from fenrir.http.errors import BadRequest
 
 
 class HTTPParser:
@@ -25,11 +24,12 @@ class HTTPParser:
         self.method = None
         self.path = None
         self.query = None
-        self.headers = {}  # TODO: We need this to be a different structure
+        self.headers = {}
         self.headers_complete = False
         self._buffer = None
         self._buffer_pos = 0
         self._parsed = 0
+        self._content_length = None
 
         # Create a http_parser struct so to act as a bag of data to store
         # information about what we're parsing into
@@ -65,63 +65,26 @@ class HTTPParser:
 
     @property
     def body_length(self):
-        # According to RFC 7230 section 3.3.3 the message body length of a
-        # request follows these rules:
-        #
-        # 1. If a Transfer-Encoding header field is present and the chunked
-        #    transfer coding (Section 4.1) is the final encoding, the message
-        #    body length is determined by reading and decoding the chunked data
-        #    until the transfer coding indicates the data is complete.
-        #
-        #    If a Transfer-Encoding header field is present in a request and
-        #    the chunked transfer coding is not the final encoding, the message
-        #    body length cannot be determined reliably; the server MUST respond
-        #    with the 400 (Bad Request) status code and then close the
-        #    connection.
-        #
-        #    If a message is received with both a Transfer-Encoding and a
-        #    Content-Length header field, the Transfer-Encoding overrides the
-        #    Content-Length. Such a message might indicate an attempt to
-        #    perform request smuggling (Section 9.5) or response splitting
-        #    (Section 9.4) and ought to be handled as an error.
-        #
-        # 2. If a message is received without Transfer-Encoding and with either
-        #    multiple Content-Length header fields having differing
-        #    field-values or a single Content-Length header field having an
-        #    invalid value, then the message framing is invalid and the
-        #    recipient MUST treat it as an unrecoverable error. If this is a
-        #    request message, the server MUST respond with a 400 (Bad Request)
-        #    status code and then close the connection.
-        #
-        # 3. If a valid Content-Length header field is present without
-        #    Transfer-Encoding, its decimal value defines the expected message
-        #    body length in octets. If the sender closes the connection or the
-        #    recipient times out before the indicated number of octets are
-        #    received, the recipient MUST consider the message to be incomplete
-        #    and close the connection.
-        #
-        # 4. If this is a request message and none of the above are true, then
-        #    the message body length is zero (no message body is present).
-        #
         # TODO: This needs to handle Transfer-Encoding: chunked
-        # TODO: This needs to handle the case where there are multiple
-        #       Content-Length headers.
-        # TODO: Should we sometimes mandate a Content-Length?
-
         assert self.headers_complete, (
             "Cannot determine body length without the headers"
         )
 
-        content_length = self.headers.get(b"Content-Length", 0)
+        # Attempt to get an integer out of the content-length, if we can't then
+        # default to 0. This value *MUST* not be used for anything except
+        # determining how much data to read from the body. We default to 0
+        # because in the case of an error we do not want to read any data from
+        # the wire.
         try:
-            content_length = int(content_length)
+            content_length = int(
+                self._content_length if self._content_length is not None else 0
+            )
         except ValueError:
-            raise BadRequest
+            content_length = 0
 
-        if content_length >= 0:
-            return content_length
-        else:
-            raise BadRequest
+        # If the value is negative then we want to default to 0 again and read
+        # nothing for the body.
+        return max(0, content_length)
 
     def _cb_http_version(self, data, at, length):
         # Will this always be NULL? I have no idea about it seems to be, so
@@ -164,6 +127,11 @@ class HTTPParser:
         # TODO: We need to handle multiple values here, probably by collapsing
         #       them into a single value?
         assert field not in self.headers
+
+        # We need to stash the content length so we can use it later to
+        # determine the length of the body.
+        if field.lower() == b"content-length":
+            self._content_length = value
 
         # Actually add the parsed value to our stored headers
         self.headers[field] = value
