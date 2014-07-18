@@ -14,7 +14,7 @@ import pretend
 import pytest
 
 from fenrir.http.errors import BadRequest
-from fenrir.http.req import Headers, Request
+from fenrir.http.req import Headers, Request, _header_parse, _header_join
 
 
 class FakeParser:
@@ -62,6 +62,35 @@ class FakeStreamReader:
 
 class TestHeaders:
 
+    @pytest.mark.parametrize(
+        ("value", "delim", "expected"),
+        [
+            (b"foo", None, b"foo"),
+            (b"foo,bar", None, b'"foo,bar"'),
+            (b'foo,bar"win', None, b'"foo,bar\\"win"'),
+            (b"foo", b";", b"foo"),
+            (b"foo;bar", b";", b'"foo;bar"'),
+            (b'foo;bar"win', b";", b'"foo;bar\\"win"'),
+        ],
+    )
+    def test_header_parse(self, value, delim, expected):
+        if delim is not None:
+            args = [value, delim]
+        else:
+            args = [value]
+
+        assert _header_parse(*args) == expected
+
+    @pytest.mark.parametrize(
+        ("header", "values", "expected"),
+        [
+            (b"Foo", [b"One", b"Two"], b"One,Two"),
+            (b"Cookie", [b"One=Wat", b"Two=Ok"], b"One=Wat; Two=Ok"),
+        ],
+    )
+    def test_header_join(self, header, values, expected):
+        assert _header_join(header, values) == expected
+
     def test_init_only_allows_bytes(self):
         with pytest.raises(TypeError):
             Headers({"str": None})
@@ -73,15 +102,15 @@ class TestHeaders:
             h["Invalid Key"]
 
     def test_repr(self):
-        r = repr(Headers({b"Content-Length": b"100"}))
+        r = repr(Headers({b"Content-Length": [b"100"]}))
         assert r == "<Headers {}>".format({b"Content-Length": b"100"})
 
     def test_iter(self):
-        h = Headers({b"Content-Length": b"100", b"Host": b"example.com"})
+        h = Headers({b"Content-Length": [b"100"], b"Host": [b"example.com"]})
         assert set(h) == {b"Content-Length", b"Host"}
 
     def test_len(self):
-        h = Headers({b"Content-Length": b"100", b"Host": b"example.com"})
+        h = Headers({b"Content-Length": [b"100"], b"Host": [b"example.com"]})
         assert len(h) == 2
 
 
@@ -130,7 +159,7 @@ class TestRequest:
 
         assert req._parser.data == [b"abc", b"zdefgh"]
 
-        req._parser.headers[b"Host"] = b"example.com"
+        req._parser.headers[b"Host"] = [b"example.com"]
         req._parser.headers_complete = True
         req._parser.body_length = 9
 
@@ -149,7 +178,7 @@ class TestRequest:
         req = Request(FakeStreamReader())
         req._parser = FakeParser(received_at=1)
         req._parser.headers_complete = True
-        req._parser.headers[b"Host"] = b"example.com"
+        req._parser.headers[b"Host"] = [b"example.com"]
         req._parser.body_length = 0
 
         req.add_bytes(b"123")
@@ -161,7 +190,7 @@ class TestRequest:
         req = Request(FakeStreamReader())
         req._parser = FakeParser(received_at=1)
         req._parser.headers_complete = True
-        req._parser.headers[b"Host"] = b"example.com"
+        req._parser.headers[b"Host"] = [b"example.com"]
         req._parser.body_length = 3
 
         req.add_bytes(b"123")
@@ -181,7 +210,7 @@ class TestRequestValidation:
         req = Request(FakeStreamReader())
         req._parser = FakeParser()
         req._parser.headers_complete = True
-        req._parser.headers[b"Host"] = b"example.com"
+        req._parser.headers[b"Host"] = [b"example.com"]
 
         req.validate()
 
@@ -190,8 +219,8 @@ class TestRequestValidation:
     @pytest.mark.parametrize(
         "content_length",
         [
-            b"-1",
-            b"\xe2\x98\x83",
+            [b"-1"],
+            [b"\xe2\x98\x83"],
         ],
     )
     def test_fails_invalid_content_length(self, content_length):
@@ -199,7 +228,7 @@ class TestRequestValidation:
         req._parser = FakeParser()
         req._parser.headers_complete = True
         req._parser.headers[b"Content-Length"] = content_length
-        req._parser.headers[b"Host"] = b"example.com"
+        req._parser.headers[b"Host"] = [b"example.com"]
 
         with pytest.raises(BadRequest):
             req.validate()

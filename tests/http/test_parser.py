@@ -61,8 +61,8 @@ class TestHTTPParser:
         assert parser.query == b"q=what"
         assert parser.http_version == b"HTTP/1.1"
         assert parser.headers == {
-            b"Host": b"example.com",
-            b"Content-Length": b"10",
+            b"Host": [b"example.com"],
+            b"Content-Length": [b"10"],
         }
         assert parser.recv_body() == b"0123456789"
 

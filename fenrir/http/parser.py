@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import collections
+
 import zero_buffer
 
 from fenrir.http import http11
@@ -25,6 +27,7 @@ class HTTPParser:
         self.path = None
         self.query = None
         self.headers = {}
+        self.headers = collections.defaultdict(list)
         self.headers_complete = False
         self._buffer = None
         self._buffer_pos = 0
@@ -124,17 +127,13 @@ class HTTPParser:
         field = http11.ffi.buffer(field, flen)[:]
         value = http11.ffi.buffer(value, vlen)[:]
 
-        # TODO: We need to handle multiple values here, probably by collapsing
-        #       them into a single value?
-        assert field not in self.headers
-
         # We need to stash the content length so we can use it later to
         # determine the length of the body.
         if field.lower() == b"content-length":
             self._content_length = value
 
         # Actually add the parsed value to our stored headers
-        self.headers[field] = value
+        self.headers[field].append(value)
 
     def _cb_header_done(self, data, at, length):
         # Will this always be NULL? I have no idea about it seems to be, so
