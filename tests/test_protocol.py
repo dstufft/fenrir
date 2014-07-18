@@ -569,8 +569,46 @@ class TestHTTPProtocol:
             b"HTTP/1.1 200 OK\r\n"
             b"Connection: close\r\n"
             b"Content-Length: 0\r\n"
-            b"Test: Yes!\r\n"
-            b"Test: No!\r\n"
+            b"Test: Yes!,No!\r\n"
+            b"\r\n"
+        )
+
+    def test_process_responses_accepts_header_list_cookie(self, monkeypatch):
+        monkeypatch.setattr(asyncio, "wait_for", lambda coro, *a, **kw: coro)
+
+        request = Request(FakeStreamReader())
+        request.add_bytes(
+            b"GET / HTTP/1.1\r\n"
+            b"Host: example.com\r\n"
+            b"Connection-Length: 0\r\n"
+            b"\r\n"
+        )
+
+        writer = FakeStreamWriter()
+        requests = CloseableQueue()
+        requests.put_nowait(request)
+        requests.close()
+
+        app = asyncio.coroutine(
+            lambda req, body: (
+                b"200 OK",
+                {b"Set-Cookie": [b"One=Win", b"Two=Wat"]},
+                [],
+            )
+        )
+
+        protocol = HTTPProtocol(app, loop=pretend.stub())
+
+        sync(protocol.process_responses(writer, requests))
+
+        assert writer.closed
+        assert not writer.buffer
+        assert bytes(writer.drained) == (
+            b"HTTP/1.1 200 OK\r\n"
+            b"Connection: close\r\n"
+            b"Content-Length: 0\r\n"
+            b"Set-Cookie: One=Win\r\n"
+            b"Set-Cookie: Two=Wat\r\n"
             b"\r\n"
         )
 

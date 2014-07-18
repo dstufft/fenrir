@@ -246,8 +246,13 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
                     if isinstance(values, (bytes, bytearray)):
                         values = [values]
 
-                    for value in values:
-                        writer.write(key + b": " + value + b"\r\n")
+                    # Special case Set-Cookie because it cannot be collapsed
+                    # normally, by joining with commas.
+                    if key.lower() == b"set-cookie":
+                        for value in values:
+                            writer.write(key + b": " + value + b"\r\n")
+                    else:
+                        writer.write(key + b": " + b",".join(values) + b"\r\n")
 
                 # Before we get to the body, we need to write a blank line to
                 # separate the headers and the response body
