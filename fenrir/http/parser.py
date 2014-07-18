@@ -130,7 +130,16 @@ class HTTPParser:
         # We need to stash the content length so we can use it later to
         # determine the length of the body.
         if field.lower() == b"content-length":
-            self._content_length = value
+            if (self._content_length is not None
+                    and self._content_length != value):
+                # We have multiple different Content-Length so we'll set it to
+                # 0. If there are any other values they'll either be 0, in
+                # which case they'll have no effect, or they'll be different,
+                # in which case we'll hit the different values block again and
+                # set it to 0 anyways.
+                self._content_length = 0
+            else:
+                self._content_length = value
 
         # Actually add the parsed value to our stored headers
         self.headers[field].append(value)

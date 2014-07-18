@@ -66,6 +66,16 @@ class TestHTTPParser:
         }
         assert parser.recv_body() == b"0123456789"
 
+    def test_parser_multiple_invalid_content_length_is_zero(self):
+        parser = HTTPParser()
+        parser.execute(b"GET /foo/bar/?q=what HTTP/1.1\r\n")
+        parser.execute(b"Host: example.com\r\n")
+        parser.execute(b"Content-Length: 10\r\n")
+        parser.execute(b"Content-Length: 12\r\n")
+        parser.execute(b"\r\n")
+
+        assert parser.body_length == 0
+
     def test_parser_completed(self):
         parser = HTTPParser()
         parser.execute(
