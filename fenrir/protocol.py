@@ -15,7 +15,8 @@ import asyncio
 from asyncio.streams import FlowControlMixin
 
 from fenrir.http.errors import HTTPError, BadRequest
-from fenrir.http.req import Request
+from fenrir.http.parser import HTTPParser, ParserError
+from fenrir.http.request import Request
 from fenrir.queues import CloseableQueue
 
 
@@ -75,59 +76,89 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
     @asyncio.coroutine
     def process_data(self, reader, requests):
         try:
-            data = None
+            while not reader.at_eof() and not requests.closed:
+                parser = None
+                while ((parser is None or not parser.finished)
+                        and not reader.at_eof()):
+                    # TODO: Do we need to handle the case where
+                    #       reader.readline() returns more than the parser
+                    #       wants to parse?
+                    data = yield from reader.readline()
 
-            while (not reader.at_eof() or data) and not requests.closed:
-                request = Request(body=asyncio.StreamReader(loop=self._loop))
-                request_queued = False
+                    # If we have no data there's no point in try to process it
+                    if not data:
+                        continue
 
-                while not request.received and (not reader.at_eof() or data):
+                    # Lazily create our parser, this will prevent us from
+                    # allocating the memory for it unless we actually need
+                    # it. This is important because if the EOF doesn't get sent
+                    # until after we've called readline() then we don't want to
+                    # create a HTTPParser instance until we have actual data
+                    # to parse with it.
+                    if parser is None:
+                        parser = HTTPParser()
+
                     try:
-                        # TODO: What is the best size chunk to read here? What
-                        #       will happen if there isn't enough data in the
-                        #       buffer to read all of the data we've requested?
-                        if not data:
-                            data = yield from reader.read(4096)
+                        parsed = parser.parse(data)
+                    except ParserError:
+                        raise BadRequest from None
+                    assert parsed == len(data)
 
-                        # The request.add_bytes method will return any unparsed
-                        # bytes, we'll reassign it to our data variable so that
-                        # we can use it the next time around to parse.
-                        data = request.add_bytes(data)
-                    except BadRequest as exc:
-                        # We've gotten a bad request. We're going to stop
-                        # processing requests and close our queue after putting
-                        # our BadRequest onto the queue.
-                        yield from requests.put(exc)
-                        requests.close()
+                # We have no data parsed, so there is nothing to process so we
+                # just continue the loop again.
+                if parser is None:
+                    continue
+                # If we've reached the EOF and our parser is not complete then
+                # we have an incomplete request and we should close our Queue.
+                elif not parser.finished:
+                    raise BadRequest
 
-                        # The peephole optimizer is causing coverage.py to
-                        # think that the below statement is never executed.
-                        break  # pragma: no cover
+                # We've pulled out the metadata related to the request now, we
+                # can create a Request object to hold it.
+                request = Request(
+                    parser.http_version,
+                    parser.method,
+                    parser.path,
+                    parser.query,
+                    parser.headers,
+                    asyncio.StreamReader(loop=self._loop),
+                )
 
-                    # If we've finished our headers, then go ahead and add our
-                    # item to our request queue so that our writer coroutine
-                    # can pull them off and write the responses
-                    if not request_queued and request.headers_complete:
-                        request_queued = True
-                        yield from requests.put(request)
+                # Queue our request for processing
+                yield from requests.put(request)
 
-                        # Determine if we need to stop processing requests on
-                        # this connection because the client either doesn't
-                        # support HTTP/1.1 or has signaled to use that they are
-                        # closing the connection after this request/response.
-                        if request.close_connection:
-                            requests.close()
+                # Read the request body off the wire and feed it into our
+                # request object.
+                received = 0
+                body_length = int(
+                    next(iter(request.headers.get(b"Content-Length", [])), 0)
+                )
+                while received < body_length and not reader.at_eof():
+                    # Grab up to the maximum size of our body from the wire
+                    data = yield from reader.read(body_length - received)
 
-                    # If we're in the body portion of our request and we've
-                    # received an EOF then we should feed an EOF into our body
-                    # and break out of this loop. We do not mark the request
-                    # as received because HTTP/1.1 provides mechanisms other
-                    # than connection close for determining if a request is
-                    # finished.
-                    if (request.headers_complete
-                            and reader.at_eof() and not data):
-                        request.body.feed_eof()
-                        break
+                    # Feed whatever data we've gotten into our request body
+                    request.body.feed_data(data)
+                    received += len(data)
+
+                # Either we've received all of our body data or our reader is
+                # at EOF, in either case we want to feed an EOF to our request
+                # body.
+                request.body.feed_eof()
+
+                # Determine if we need to stop processing requests on this
+                # connection because the client either doesn't support
+                # HTTP/1.1+ or has signaled to use that they are closing the
+                # connection after this request/response.
+                if reader.at_eof():
+                    requests.close()
+                elif request.http_version == b"HTTP/1.0":
+                    requests.close()
+                elif b"close" in request.headers.get(b"Connection", []):
+                    requests.close()
+
+        except BadRequest as exc:
+            yield from requests.put(exc)
         finally:
             # Once we've received all of our data and processed it we want to
             # close our queue so that our process_responses coroutine will know

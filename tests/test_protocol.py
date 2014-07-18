@@ -15,7 +15,7 @@ import asyncio
 import pretend
 
 from fenrir.http.errors import HTTPError, BadRequest
-from fenrir.http.req import Request
+from fenrir.http.request import Request
 from fenrir.protocol import HTTPProtocol, HTTPServer
 from fenrir.queues import CloseableQueue
 
@@ -59,6 +59,18 @@ class FakeStreamReader:
         else:
             data = self._buffer[:size]
             self._buffer = self._buffer[size:]
+
+        return bytes(data)
+
+    @asyncio.coroutine
+    def readline(self):
+        idx = self._buffer.find(b"\n")
+        if idx < 0:
+            data = self._buffer[:]
+            self._buffer.clear()
+        else:
+            data = self._buffer[:idx + 1]
+            del self._buffer[:idx + 1]
 
         return bytes(data)
 
@@ -319,12 +331,10 @@ class TestHTTPProtocol:
 
         protocol = HTTPProtocol(pretend.stub(), loop=pretend.stub())
 
-        assert not reader.at_eof()
         assert not requests.closed
 
         sync(protocol.process_data(reader, requests))
 
-        assert reader.at_eof()
         assert requests.closed
         assert requests.qsize() == 1
 
@@ -353,12 +363,10 @@ class TestHTTPProtocol:
 
         protocol = HTTPProtocol(pretend.stub(), loop=pretend.stub())
 
-        assert not reader.at_eof()
         assert not requests.closed
 
         sync(protocol.process_data(reader, requests))
 
-        assert reader.at_eof()
         assert requests.closed
         assert requests.qsize() == 1
 
@@ -397,15 +405,71 @@ class TestHTTPProtocol:
 
         assert isinstance(request, Request)
 
+    def test_process_data_readline_no_data(self, monkeypatch):
+        monkeypatch.setattr(asyncio, "StreamReader", FakeStreamReader)
+
+        reader = FakeStreamReader()
+        reader.readline = asyncio.coroutine(lambda: reader.feed_eof() or b"")
+        requests = CloseableQueue(loop=pretend.stub())
+
+        protocol = HTTPProtocol(pretend.stub(), loop=pretend.stub())
+
+        assert not requests.closed
+
+        sync(protocol.process_data(reader, requests))
+
+        assert requests.closed
+        assert requests.qsize() == 0
+
+    def test_process_data_bad_request_parser_error(self, monkeypatch):
+        monkeypatch.setattr(asyncio, "StreamReader", FakeStreamReader)
+
+        reader = FakeStreamReader()
+        reader.feed_data(b"GET / HTTP/1.1\r\nFOO :Bar\r\n\r\n")
+        reader.feed_eof()
+        requests = CloseableQueue(loop=pretend.stub())
+
+        protocol = HTTPProtocol(pretend.stub(), loop=pretend.stub())
+
+        assert not requests.closed
+
+        sync(protocol.process_data(reader, requests))
+
+        assert requests.closed
+        assert requests.qsize() == 1
+
+        request = requests.get_nowait()
+
+        assert isinstance(request, BadRequest)
+
+    def test_process_data_bad_request_incomplete_parser(self, monkeypatch):
+        monkeypatch.setattr(asyncio, "StreamReader", FakeStreamReader)
+
+        reader = FakeStreamReader()
+        reader.feed_data(b"GET / HTTP/1.1\r\n")
+        reader.feed_eof()
+        requests = CloseableQueue(loop=pretend.stub())
+
+        protocol = HTTPProtocol(pretend.stub(), loop=pretend.stub())
+
+        assert not requests.closed
+
+        sync(protocol.process_data(reader, requests))
+
+        assert requests.closed
+        assert requests.qsize() == 1
+
+        request = requests.get_nowait()
+
+        assert isinstance(request, BadRequest)
+
     def test_process_responses(self, monkeypatch):
         monkeypatch.setattr(asyncio, "wait_for", lambda coro, *a, **kw: coro)
 
-        request = Request(FakeStreamReader())
-        request.add_bytes(
-            b"GET / HTTP/1.1\r\n"
-            b"Host: example.com\r\n"
-            b"Connection-Length: 0\r\n"
-            b"\r\n"
+        request = Request(
+            b"HTTP/1.1", b"GET", b"/", None,
+            [(b"Host", b"example.com"), (b"Connection-Length", b"0")],
+            FakeStreamReader(),
         )
 
         writer = FakeStreamWriter()
@@ -445,12 +509,10 @@ class TestHTTPProtocol:
         wait_for = WaitFor(2)
         monkeypatch.setattr(asyncio, "wait_for", wait_for)
 
-        request = Request(FakeStreamReader())
-        request.add_bytes(
-            b"GET / HTTP/1.1\r\n"
-            b"Host: example.com\r\n"
-            b"Connection-Length: 0\r\n"
-            b"\r\n"
+        request = Request(
+            b"HTTP/1.1", b"GET", b"/", None,
+            [(b"Host", b"example.com"), (b"Connection-Length", b"0")],
+            FakeStreamReader(),
         )
 
         writer = FakeStreamWriter()
@@ -508,12 +570,10 @@ class TestHTTPProtocol:
     def test_process_responses_accepts_headers(self, monkeypatch):
         monkeypatch.setattr(asyncio, "wait_for", lambda coro, *a, **kw: coro)
 
-        request = Request(FakeStreamReader())
-        request.add_bytes(
-            b"GET / HTTP/1.1\r\n"
-            b"Host: example.com\r\n"
-            b"Connection-Length: 0\r\n"
-            b"\r\n"
+        request = Request(
+            b"HTTP/1.1", b"GET", b"/", None,
+            [(b"Host", b"example.com"), (b"Connection-Length", b"0")],
+            FakeStreamReader(),
         )
 
         writer = FakeStreamWriter()
@@ -542,12 +602,10 @@ class TestHTTPProtocol:
     def test_process_responses_accepts_header_list(self, monkeypatch):
         monkeypatch.setattr(asyncio, "wait_for", lambda coro, *a, **kw: coro)
 
-        request = Request(FakeStreamReader())
-        request.add_bytes(
-            b"GET / HTTP/1.1\r\n"
-            b"Host: example.com\r\n"
-            b"Connection-Length: 0\r\n"
-            b"\r\n"
+        request = Request(
+            b"HTTP/1.1", b"GET", b"/", None,
+            [(b"Host", b"example.com"), (b"Connection-Length", b"0")],
+            FakeStreamReader(),
         )
 
         writer = FakeStreamWriter()
@@ -576,12 +634,10 @@ class TestHTTPProtocol:
     def test_process_responses_accepts_header_list_cookie(self, monkeypatch):
         monkeypatch.setattr(asyncio, "wait_for", lambda coro, *a, **kw: coro)
 
-        request = Request(FakeStreamReader())
-        request.add_bytes(
-            b"GET / HTTP/1.1\r\n"
-            b"Host: example.com\r\n"
-            b"Connection-Length: 0\r\n"
-            b"\r\n"
+        request = Request(
+            b"HTTP/1.1", b"GET", b"/", None,
+            [(b"Host", b"example.com"), (b"Connection-Length", b"0")],
+            FakeStreamReader(),
         )
 
         writer = FakeStreamWriter()
@@ -615,12 +671,10 @@ class TestHTTPProtocol:
     def test_process_responses_explicit_content_length(self, monkeypatch):
         monkeypatch.setattr(asyncio, "wait_for", lambda coro, *a, **kw: coro)
 
-        request = Request(FakeStreamReader())
-        request.add_bytes(
-            b"GET / HTTP/1.1\r\n"
-            b"Host: example.com\r\n"
-            b"Connection-Length: 0\r\n"
-            b"\r\n"
+        request = Request(
+            b"HTTP/1.1", b"GET", b"/", None,
+            [(b"Host", b"example.com"), (b"Connection-Length", b"0")],
+            FakeStreamReader(),
         )
 
         writer = FakeStreamWriter()
@@ -653,12 +707,10 @@ class TestHTTPProtocol:
     def test_process_responses_single_coroutine(self, monkeypatch):
         monkeypatch.setattr(asyncio, "wait_for", lambda coro, *a, **kw: coro)
 
-        request = Request(FakeStreamReader())
-        request.add_bytes(
-            b"GET / HTTP/1.1\r\n"
-            b"Host: example.com\r\n"
-            b"Connection-Length: 0\r\n"
-            b"\r\n"
+        request = Request(
+            b"HTTP/1.1", b"GET", b"/", None,
+            [(b"Host", b"example.com"), (b"Connection-Length", b"0")],
+            FakeStreamReader(),
         )
 
         writer = FakeStreamWriter()
@@ -691,12 +743,10 @@ class TestHTTPProtocol:
     def test_process_responses_has_coroutines(self, monkeypatch):
         monkeypatch.setattr(asyncio, "wait_for", lambda coro, *a, **kw: coro)
 
-        request = Request(FakeStreamReader())
-        request.add_bytes(
-            b"GET / HTTP/1.1\r\n"
-            b"Host: example.com\r\n"
-            b"Connection-Length: 0\r\n"
-            b"\r\n"
+        request = Request(
+            b"HTTP/1.1", b"GET", b"/", None,
+            [(b"Host", b"example.com"), (b"Connection-Length", b"0")],
+            FakeStreamReader(),
         )
 
         writer = FakeStreamWriter()
@@ -731,20 +781,16 @@ class TestHTTPProtocol:
     def test_process_responses_throws_away_pending(self, monkeypatch):
         monkeypatch.setattr(asyncio, "wait_for", lambda coro, *a, **kw: coro)
 
-        request_1 = Request(FakeStreamReader())
-        request_1.add_bytes(
-            b"GET / HTTP/1.1\r\n"
-            b"Host: example.com\r\n"
-            b"Connection-Length: 0\r\n"
-            b"\r\n"
+        request_1 = Request(
+            b"HTTP/1.1", b"GET", b"/", None,
+            [(b"Host", b"example.com"), (b"Connection-Length", b"0")],
+            FakeStreamReader(),
         )
 
-        request_2 = Request(FakeStreamReader())
-        request_2.add_bytes(
-            b"GET / HTTP/1.1\r\n"
-            b"Host: example.com\r\n"
-            b"Connection-Length: 0\r\n"
-            b"\r\n"
+        request_2 = Request(
+            b"HTTP/1.1", b"GET", b"/", None,
+            [(b"Host", b"example.com"), (b"Connection-Length", b"0")],
+            FakeStreamReader(),
         )
 
         writer = FakeStreamWriter()
@@ -776,20 +822,16 @@ class TestHTTPProtocol:
     def test_process_responses_multiple_correct_order(self, monkeypatch):
         monkeypatch.setattr(asyncio, "wait_for", lambda coro, *a, **kw: coro)
 
-        request_1 = Request(FakeStreamReader())
-        request_1.add_bytes(
-            b"GET / HTTP/1.1\r\n"
-            b"Host: example.com\r\n"
-            b"Connection-Length: 0\r\n"
-            b"\r\n"
+        request_1 = Request(
+            b"HTTP/1.1", b"GET", b"/", None,
+            [(b"Host", b"example.com"), (b"Connection-Length", b"0")],
+            FakeStreamReader(),
         )
 
-        request_2 = Request(FakeStreamReader())
-        request_2.add_bytes(
-            b"GET /foo/bar/ HTTP/1.1\r\n"
-            b"Host: example.com\r\n"
-            b"Connection-Length: 0\r\n"
-            b"\r\n"
+        request_2 = Request(
+            b"HTTP/1.1", b"GET", b"/foo/bar/", None,
+            [(b"Host", b"example.com"), (b"Connection-Length", b"0")],
+            FakeStreamReader(),
         )
 
         writer = FakeStreamWriter()
