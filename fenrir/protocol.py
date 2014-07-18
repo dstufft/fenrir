@@ -115,11 +115,7 @@ class HTTPProtocol(FlowControlMixin, asyncio.Protocol):
                         # this connection because the client either doesn't
                         # support HTTP/1.1 or has signaled to use that they are
                         # closing the connection after this request/response.
-                        # TODO: We need to parse this so that we support
-                        #       multiple connection options.
-                        if (request.http_version == b"HTTP/1.0"
-                            or request.headers.get(b"Connection", None)
-                                == b"close"):
+                        if request.close_connection:
                             requests.close()
 
                     # If we're in the body portion of our request and we've

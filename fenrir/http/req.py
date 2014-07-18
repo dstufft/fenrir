@@ -109,6 +109,14 @@ class Request:
     def received(self):
         return self._parser.completed
 
+    @property
+    def close_connection(self):
+        return (self.http_version == b"HTTP/1.0"
+                or b"close" in set(
+                    x for x in self.headers.get(b"Connection", b"").split(b",")
+                    if x
+                ))
+
     def add_bytes(self, data):
         if not data:
             return

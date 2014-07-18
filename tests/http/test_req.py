@@ -203,6 +203,31 @@ class TestRequest:
 
         assert req.as_params() == (req, body)
 
+    def test_close_connection_http_1_0(self):
+        req = Request(FakeStreamReader())
+        req._parser = FakeParser()
+        req._parser.http_version = b"HTTP/1.0"
+        req._parser.headers_complete = True
+
+        assert req.close_connection
+
+    def test_close_connection_header(self):
+        req = Request(FakeStreamReader())
+        req._parser = FakeParser()
+        req._parser.http_version = b"HTTP/1.1"
+        req._parser.headers_complete = True
+        req._parser.headers[b"Connection"] = [b"close"]
+
+        assert req.close_connection
+
+    def test_close_connection_persistent(self):
+        req = Request(FakeStreamReader())
+        req._parser = FakeParser()
+        req._parser.http_version = b"HTTP/1.1"
+        req._parser.headers_complete = True
+
+        assert not req.close_connection
+
 
 class TestRequestValidation:
 
