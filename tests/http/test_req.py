@@ -15,6 +15,7 @@ import pytest
 
 from fenrir.http.errors import BadRequest
 from fenrir.http.req import Headers, Request, _header_parse, _header_join
+from fenrir.http.parser import ParseError
 
 
 class FakeParser:
@@ -173,6 +174,17 @@ class TestRequest:
 
         assert req.body.data == [b"123", b"456", b"789"]
         assert req.body.eof
+
+    def test_request_bad_requests_parse_error(self):
+        def raiser(*args, **kwargs):
+            raise ParseError
+
+        req = Request(FakeStreamReader())
+        req._parser = FakeParser()
+        req._parser.execute = raiser
+
+        with pytest.raises(BadRequest):
+            req.add_bytes(b"foo")
 
     def test_request_add_bytes_empty_body(self):
         req = Request(FakeStreamReader())

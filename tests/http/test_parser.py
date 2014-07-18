@@ -12,7 +12,7 @@
 
 import pytest
 
-from fenrir.http.parser import HTTPParser
+from fenrir.http.parser import HTTPParser, ParseError
 
 
 class TestHTTPParser:
@@ -65,6 +65,14 @@ class TestHTTPParser:
             b"Content-Length": [b"10"],
         }
         assert parser.recv_body() == b"0123456789"
+
+    def test_invalid_raises(self):
+        parser = HTTPParser()
+        parser.execute(b"GET /foo/bar/?q=what HTTP/1.1\r\n")
+        parser.execute(b"Host: example.com\r\n")
+
+        with pytest.raises(ParseError):
+            parser.execute(b"Foo : Bar\r\n")
 
     def test_parser_multiple_invalid_content_length_is_zero(self):
         parser = HTTPParser()
