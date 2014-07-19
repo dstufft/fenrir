@@ -188,3 +188,20 @@ class TestHTTPParser:
         assert parser.path == b"/"
         assert parser.query is None
         assert parser.headers == []
+
+    def test_parser_handles_newlines(self):
+        """
+        RFC 7230 Section 3.5 states:
+
+        Although the line terminator for the start-line and header fields is
+        the sequence CRLF, a recipient MAY recognize a single LF as a line
+        terminator and ignore any preceding CR.
+        """
+        parser = HTTPParser()
+        parser.parse(b"GET / HTTP/1.1\nFoo: Bar    \n\n")
+
+        assert parser.http_version == b"HTTP/1.1"
+        assert parser.method == b"GET"
+        assert parser.path == b"/"
+        assert parser.query is None
+        assert parser.headers == [(b"Foo", b"Bar")]
