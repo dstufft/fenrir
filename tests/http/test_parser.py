@@ -121,3 +121,19 @@ class TestHTTPParser:
 
         with pytest.raises(ValueError):
             parser.parse(msg, 10000)
+
+    def test_bad_request_improperly_escaped_urls(self):
+        """
+        RFC 7230 Section 3.1.1 states:
+
+        Recipients of an invalid request-line SHOULD respond with either a 400
+        (Bad Request) error or a 301 (Moved Permanently) redirect with the
+        request-target properly encoded. A recipient SHOULD NOT attempt to
+        autocorrect and then process the request without a redirect, since the
+        invalid request-line might be deliberately crafted to bypass security
+        filters along the request chain.
+        """
+        parser = HTTPParser()
+
+        with pytest.raises(ParserError):
+            parser.parse(b"GET /foo bar/ HTTP/1.1\r\n\r\n")
