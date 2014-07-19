@@ -137,3 +137,19 @@ class TestHTTPParser:
 
         with pytest.raises(ParserError):
             parser.parse(b"GET /foo bar/ HTTP/1.1\r\n\r\n")
+
+    def test_parser_error_space_in_field_name(self):
+        """
+        RFC 7320 Section 3.2.4 states:
+
+        No whitespace is allowed between the header field-name and colon. In
+        the past, differences in the handling of such whitespace have led to
+        security vulnerabilities in request routing and response handling. A
+        server MUST reject any received request message that contains
+        whitespace between a header field-name and colon with a response code
+        of 400 (Bad Request).
+        """
+        parser = HTTPParser()
+
+        with pytest.raises(ParserError):
+            parser.parse(b"GET / HTTP/1.1\r\nFoo : Bar\r\n\r\n")
