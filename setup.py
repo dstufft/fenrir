@@ -11,13 +11,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os.path
-
 from distutils.command.build import build
-from distutils.command.build_clib import build_clib
 
 from setuptools import find_packages, setup
-from setuptools.command.develop import develop
 from setuptools.command.install import install
 
 
@@ -27,20 +23,6 @@ CFFI_DEPENDENCY = "cffi>=0.8"
 def get_ext_modules():
     from fenrir.c import http11
     return [http11.ffi.verifier.get_extension()]
-
-
-def get_include_dirs(include_dirs):
-    if include_dirs is None:
-        include_dirs = []
-
-    include_dirs.append(
-        os.path.join(
-            os.path.abspath(os.path.dirname(__file__)),
-            "bundled",
-        )
-    )
-
-    return include_dirs
 
 
 class CFFIBuild(build):
@@ -55,9 +37,6 @@ class CFFIBuild(build):
 
     def finalize_options(self):
         self.distribution.ext_modules = get_ext_modules()
-        self.distribution.include_dirs = get_include_dirs(
-            self.distribution.include_dirs,
-        )
         build.finalize_options(self)
 
 
@@ -70,48 +49,7 @@ class CFFIInstall(install):
 
     def finalize_options(self):
         self.distribution.ext_modules = get_ext_modules()
-        self.distribution.include_dirs = get_include_dirs(
-            self.distribution.include_dirs,
-        )
         install.finalize_options(self)
-
-
-class HTTP1BuildCLib(build_clib):
-
-    def build_libraries(self, *args, **kwargs):
-        # Stash the initial values here
-        compiler = self.compiler.compiler
-        compiler_so = self.compiler.compiler_so
-
-        # mongrel2's http11 parser does not build correctly with the
-        # -Werror=declaration-after-statement option declared, so we'll ensure
-        # that we don't have it specified.
-        self.compiler.compiler = [
-            x for x in self.compiler.compiler
-            if x != "-Werror=declaration-after-statement"
-        ]
-        self.compiler.compiler_so = [
-            x for x in self.compiler.compiler_so
-            if x != "-Werror=declaration-after-statement"
-        ]
-
-        # Go ahead and finish building the libraries
-        ret = build_clib.build_libraries(self, *args, **kwargs)
-
-        # Undo our changes
-        self.compiler.compiler = compiler
-        self.compiler.compiler_so = compiler_so
-
-        return ret
-
-
-class CLibDevelop(develop):
-
-    def install_for_development(self):
-        # We need to build our clib prior to building our ext
-        self.run_command("build_clib")
-
-        develop.install_for_development(self)
 
 
 meta = {}
@@ -154,24 +92,11 @@ setup(
         CFFI_DEPENDENCY,
     ],
 
-    # Build the mongrel2 http parser
-    libraries=[
-        (
-            "http11",
-            {
-                "sources": ["bundled/http11/http11_parser.c"],
-                "include_dirs": ["bundled"],
-            },
-        ),
-    ],
-
     # These are needed so that CFFI can correctly function
     zip_safe=False,
     ext_package="fenrir",
     cmdclass={
         "build": CFFIBuild,
-        "build_clib": HTTP1BuildCLib,
-        "develop": CLibDevelop,
         "install": CFFIInstall,
     }
 )
