@@ -13,7 +13,7 @@
 import pretend
 import pytest
 
-from fenrir.http.http11 import Library
+from fenrir.c.utils import Library
 
 
 class TestLibrary:
@@ -29,7 +29,7 @@ class TestLibrary:
 
         lib = Library(ffi)
 
-        assert lib.lib is None
+        assert lib._lib is None
         assert compile_module.calls == []
 
     def test_prevents_compilation(self):
@@ -62,7 +62,7 @@ class TestLibrary:
         lib = Library(ffi)
 
         # Quick sanity check
-        assert lib.lib is None
+        assert lib._lib is None
         assert lib.ffi.verifier.load_library.calls == []
 
         # Get some stuff from the underlying lib

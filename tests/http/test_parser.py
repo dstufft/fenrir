@@ -10,132 +10,114 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import collections
+
 import pytest
 
-from fenrir.http.parser import HTTPParser, ParseError
+from fenrir.http.parser import HTTPParser, ParserError
+
+
+ParserResult = collections.namedtuple(
+    "ParserResult",
+    ["http_version", "method", "path", "query", "headers"],
+)
 
 
 class TestHTTPParser:
 
-    def test_body_length(self):
-        parser = HTTPParser()
-        parser._content_length = b"15"
-        parser.headers_complete = True
-
-        assert parser.body_length == 15
-
     @pytest.mark.parametrize(
-        "length",
+        ("lines", "expected"),
         [
-            b"abc",
-            b"-15",
-            b"\xe2\x98\x83",
+            (
+                [b"GET / HTTP/1.1\r\n", b"\r\n"],
+                ParserResult(b"HTTP/1.1", b"GET", b"/", None, []),
+            ),
+            (
+                [b"GET /?q=wat HTTP/1.1\r\n", b"\r\n"],
+                ParserResult(b"HTTP/1.1", b"GET", b"/", b"q=wat", []),
+            ),
+            (
+                [b"GET / HTTP/1.1\r\n", b"Foo: Bar\r\n", b"\r\n"],
+                ParserResult(
+                    b"HTTP/1.1",
+                    b"GET",
+                    b"/",
+                    None,
+                    [(b"Foo", b"Bar")],
+                ),
+            ),
+            (
+                [
+                    b"GET / HTTP/1.1\r\n",
+                    b"Foo: Bar\r\n",
+                    b"Wat: Ok\r\n",
+                    b"Foo: BarTwo\r\n",
+                    b"\r\n",
+                ],
+                ParserResult(
+                    b"HTTP/1.1",
+                    b"GET",
+                    b"/",
+                    None,
+                    [(b"Foo", b"Bar"), (b"Wat", b"Ok"), (b"Foo", b"BarTwo")],
+                ),
+            ),
         ],
     )
-    def test_body_length_invalid(self, length):
+    def test_parse_success(self, lines, expected):
         parser = HTTPParser()
-        parser._content_length = length
-        parser.headers_complete = True
+        for line in lines:
+            assert parser.parse(line) == len(line)
 
-        assert parser.body_length == 0
+        assert parser.finished
+        assert parser.http_version == expected.http_version
+        assert parser.method == expected.method
+        assert parser.path == expected.path
+        assert parser.query == expected.query
+        assert parser.headers == expected.headers
 
-    def test_body_length_defaults_zero(self):
+    @pytest.mark.parametrize(
+        "lines",
+        [
+            [b"GET / HTTP/1.1\r\n", b"Foo : Bar\r\n"],
+        ],
+    )
+    def test_parse_error(self, lines):
         parser = HTTPParser()
-        parser.headers_complete = True
+        for line in lines[:-1]:
+            assert parser.parse(line) == len(line)
 
-        assert parser.body_length == 0
+        with pytest.raises(ParserError):
+            parser.parse(lines[-1])
 
-    def test_basic_parses(self):
-        parser = HTTPParser()
-
-        assert parser.execute(b"GET /foo/bar/?q=what HTTP/1.1\r\n") == 31
-        assert parser.execute(b"Host: example.com\r\n") == 19
-        assert parser.execute(b"Content-Length: 10\r\n") == 20
-        assert parser.execute(b"\r\n") == 2
-        assert parser.execute(b"01234567zz", 8) == 8
-        assert parser.execute(b"89") == 2
-        assert parser.execute(b"zzz") == 0
-
-        assert parser.method == b"GET"
-        assert parser.path == b"/foo/bar/"
-        assert parser.query == b"q=what"
-        assert parser.http_version == b"HTTP/1.1"
-        assert parser.headers == {
-            b"Host": [b"example.com"],
-            b"Content-Length": [b"10"],
-        }
-        assert parser.recv_body() == b"0123456789"
-
-    def test_invalid_raises(self):
-        parser = HTTPParser()
-        parser.execute(b"GET /foo/bar/?q=what HTTP/1.1\r\n")
-        parser.execute(b"Host: example.com\r\n")
-
-        with pytest.raises(ParseError):
-            parser.execute(b"Foo : Bar\r\n")
-
-    def test_parser_multiple_invalid_content_length_is_zero(self):
-        parser = HTTPParser()
-        parser.execute(b"GET /foo/bar/?q=what HTTP/1.1\r\n")
-        parser.execute(b"Host: example.com\r\n")
-        parser.execute(b"Content-Length: 10\r\n")
-        parser.execute(b"Content-Length: 12\r\n")
-        parser.execute(b"\r\n")
-
-        assert parser.body_length == 0
-
-    def test_parser_completed(self):
-        parser = HTTPParser()
-        parser.execute(
+    def test_parse_offset_length(self):
+        msg = (
             b"GET / HTTP/1.1\r\n"
-            b"Host: example.com\r\n"
+            b"Foo: Bar\r\n"
             b"\r\n"
         )
 
-        assert parser.completed
-
-    @pytest.mark.parametrize(
-        "data",
-        [
-            # Test that we're not completed if we haven't gotten any headers
-            b"GET / HTTP/1.1\r\n",
-
-            # Test that if we haven't gotten any of the body that we're not
-            # completed
-            (
-                b"GET / HTTP/1.1\r\n"
-                b"Host: example.com\r\n"
-                b"Content-Length: 10\r\n"
-                b"\r\n"
-            ),
-
-            # Test that if we have gotten the body, but not the entire thing
-            # that we're not completed
-            (
-                b"GET / HTTP/1.1\r\n"
-                b"Host: example.com\r\n"
-                b"Content-Length: 10\r\n"
-                b"\r\n"
-                b"12345"
-            ),
-        ],
-    )
-    def test_parser_not_completed(self, data):
         parser = HTTPParser()
-        parser.execute(data)
 
-        assert not parser.completed
+        assert parser.parse(msg, 5) == 5
+        assert parser.parse(msg, 10, 5) == 10
+        assert parser.parse(msg, offset=15) == 13
 
-    def test_recv_returns_unrecvd_data(self):
+        assert parser.finished
+        assert parser.http_version == b"HTTP/1.1"
+        assert parser.method == b"GET"
+        assert parser.path == b"/"
+        assert parser.query is None
+        assert parser.headers == [(b"Foo", b"Bar")]
+
+    def test_parse_past_data_end(self):
+        msg = (
+            b"GET / HTTP/1.1\r\n"
+            b"Foo: Bar\r\n"
+            b"\r\n"
+        )
+
         parser = HTTPParser()
-        parser.execute(b"GET /foo/bar/?q=what HTTP/1.1\r\n")
-        parser.execute(b"Host: example.com\r\n")
-        parser.execute(b"Content-Length: 10\r\n")
-        parser.execute(b"\r\n")
-        parser.execute(b"01234567")
 
-        assert parser.recv_body() == b"01234567"
-
-        parser.execute(b"89")
-
-        assert parser.recv_body() == b"89"
+        with pytest.raises(ValueError):
+            parser.parse(msg, 10000)
