@@ -18,7 +18,7 @@ License
 
 The Mongrel2 Code is licensed under a 3 Clause BSD license
 
-.. code:
+.. code::
 
     Copyright (c) 2010, Zed A. Shaw and Mongrel2 Project Contributors.
     All rights reserved.
