@@ -3,6 +3,8 @@ include LICENSE
 include README.rst
 include CONTRIBUTING.rst
 
+include fenrir/c/http11/README.rst
+
 recursive-include examples *.py
 recursive-include fenrir/c/http11/src *.h *.c *.rl
 recursive-include tests *.py
