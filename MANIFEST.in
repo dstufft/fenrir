@@ -2,6 +2,7 @@ include AUTHORS
 include LICENSE
 include README.rst
 include CONTRIBUTING.rst
+include Makefile
 
 include fenrir/c/http11/README.rst
 
