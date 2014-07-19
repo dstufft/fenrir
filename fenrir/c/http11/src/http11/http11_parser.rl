@@ -97,26 +97,12 @@
   }
 
   action done {
-      if(parser->xml_sent || parser->json_sent) {
-        parser->body_start = PTR_TO(mark) - buffer;
-        // +1 includes the \0
-        parser->content_len = fpc - buffer - parser->body_start + 1;
-      } else {
-        parser->body_start = fpc - buffer + 1;
+    parser->body_start = fpc - buffer + 1;
 
-        if(parser->header_done != NULL) {
-          parser->header_done(parser->data, fpc + 1, pe - fpc - 1);
-        }
-      }
+    if(parser->header_done != NULL) {
+      parser->header_done(parser->data, fpc + 1, pe - fpc - 1);
+    }
     fbreak;
-  }
-
-  action xml {
-      parser->xml_sent = 1;
-  }
-
-  action json {
-      parser->json_sent = 1;
   }
 
 
@@ -239,17 +225,7 @@
 
   Request = Request_Line ( message_header )* ( CRLF );
 
-  SocketJSONStart = ("@" relative_part);
-  SocketJSONData = "{" any* "}" :>> "\0";
-
-  SocketXMLData = ("<" [a-z0-9A-Z\-.]+) >mark %request_path ("/" | space | ">") any* ">" :>> "\0";
-
-  SocketJSON = SocketJSONStart >mark %request_path " " SocketJSONData >mark @json;
-  SocketXML = SocketXMLData @xml;
-
-  SocketRequest = (SocketXML | SocketJSON);
-
-main := (Request | SocketRequest) @done;
+main := Request @done;
 
 }%%
 
@@ -266,8 +242,6 @@ int http_parser_init(http_parser *parser) {
   parser->nread = 0;
   parser->field_len = 0;
   parser->field_start = 0;
-  parser->xml_sent = 0;
-  parser->json_sent = 0;
 
   return(1);
 }
