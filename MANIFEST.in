@@ -2,9 +2,12 @@ include AUTHORS
 include LICENSE
 include README.rst
 include CONTRIBUTING.rst
+include Makefile
+
+include fenrir/c/http11/README.rst
 
 recursive-include examples *.py
-recursive-include bundled *.h *.c *.rl
+recursive-include fenrir/c/http11/src *.h *.c *.rl
 recursive-include tests *.py
 
 exclude tox.ini
@@ -12,4 +15,4 @@ exclude .travis.yml
 exclude .coverage
 exclude .coveragerc
 
-prune fenrir/c/__pycache__
+prune fenrir/c/http11/__pycache__

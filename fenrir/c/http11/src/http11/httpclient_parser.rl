@@ -2,23 +2,23 @@
  *
  * Copyright (c) 2010, Zed A. Shaw and Mongrel2 Project Contributors.
  * All rights reserved.
- * 
+ *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are
  * met:
- * 
+ *
  *     * Redistributions of source code must retain the above copyright
  *       notice, this list of conditions and the following disclaimer.
- * 
+ *
  *     * Redistributions in binary form must reproduce the above copyright
  *       notice, this list of conditions and the following disclaimer in the
  *       documentation and/or other materials provided with the distribution.
- * 
+ *
  *     * Neither the name of the Mongrel2 Project, Zed A. Shaw, nor the names
  *       of its contributors may be used to endorse or promote products
  *       derived from this software without specific prior written
  *       permission.
- * 
+ *
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
  * IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
  * THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -38,7 +38,6 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <string.h>
-#include "dbg.h"
 
 #define LEN(AT, FPC) (FPC - buffer - parser->AT)
 #define MARK(M,FPC) (parser->M = (FPC) - buffer)
@@ -53,13 +52,13 @@
 
     action start_field { MARK(field_start, fpc); }
 
-    action write_field { 
+    action write_field {
         parser->field_len = LEN(field_start, fpc);
     }
 
     action start_value { MARK(mark, fpc); }
 
-    action write_content_len { 
+    action write_content_len {
         parser->content_len = strtol(PTR_TO(mark), NULL, 10);
     }
 
@@ -67,25 +66,25 @@
         parser->close = 1;
     }
 
-    action write_value { 
+    action write_value {
         if(parser->http_field != NULL) {
             parser->http_field(parser->data, PTR_TO(field_start), parser->field_len, PTR_TO(mark), LEN(mark, fpc));
         }
     }
 
-    action reason_phrase { 
+    action reason_phrase {
         if(parser->reason_phrase != NULL)
             parser->reason_phrase(parser->data, PTR_TO(mark), LEN(mark, fpc));
     }
 
-    action status_code { 
+    action status_code {
         parser->status = strtol(PTR_TO(mark), NULL, 10);
 
         if(parser->status_code != NULL)
             parser->status_code(parser->data, PTR_TO(mark), LEN(mark, fpc));
     }
 
-    action http_version {	
+    action http_version {
         if(parser->http_version != NULL)
             parser->http_version(parser->data, PTR_TO(mark), LEN(mark, fpc));
     }
@@ -106,8 +105,8 @@
         parser->chunked = 1;
     }
 
-    action done { 
-        parser->body_start = fpc - buffer + 1; 
+    action done {
+        parser->body_start = fpc - buffer + 1;
         if(parser->header_done != NULL)
             parser->header_done(parser->data, fpc + 1, pe - fpc - 1);
         fbreak;
@@ -170,7 +169,7 @@ int httpclient_parser_init(httpclient_parser *parser)  {
     parser->mark = 0;
     parser->nread = 0;
     parser->field_len = 0;
-    parser->field_start = 0;    
+    parser->field_start = 0;
     parser->close = 0;
 
     return(1);
@@ -178,7 +177,7 @@ int httpclient_parser_init(httpclient_parser *parser)  {
 
 
 /** exec **/
-int httpclient_parser_execute(httpclient_parser *parser, const char *buffer, size_t len, size_t off)  
+int httpclient_parser_execute(httpclient_parser *parser, const char *buffer, size_t len, size_t off)
 {
     const char *p, *pe;
     int cs = parser->cs;
