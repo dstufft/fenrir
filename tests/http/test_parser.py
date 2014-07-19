@@ -198,7 +198,7 @@ class TestHTTPParser:
         terminator and ignore any preceding CR.
         """
         parser = HTTPParser()
-        parser.parse(b"GET / HTTP/1.1\nFoo: Bar    \n\n")
+        parser.parse(b"GET / HTTP/1.1\nFoo: Bar\n\n")
 
         assert parser.http_version == b"HTTP/1.1"
         assert parser.method == b"GET"
