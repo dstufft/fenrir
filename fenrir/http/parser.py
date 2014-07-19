@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import re
+
 from fenrir.c import http11
 
 
@@ -24,6 +26,8 @@ class HTTPParser:
     A small wrapper around the CFFI bindings for the HTTP/1.1 parser that was
     pulled from Mongrel2.
     """
+
+    _leading_linefeeds_regex = re.compile(rb"^((?:\r?\n)+)", re.DOTALL)
 
     def __init__(self):
         # Create a http_parser struct so to act as a bag of data to store
@@ -112,6 +116,19 @@ class HTTPParser:
         # not greater than the length of the data we have.
         if offset + length > len(data):
             raise ValueError("Cannot read more data than exists.")
+
+        # Mongrel2 HTTP parser doesn't accept leading CRLF, this goes against
+        # RFC 7230 Section 3.5.
+        if self._parsed == 0:  # Only leading CRLFs are accepted:
+            m = self._leading_linefeeds_regex.search(data[offset:length])
+            if m is not None:
+                # Adjust our offset to move past the given CRLFs
+                offset += len(m.group(0))
+
+                # Check to see if we're actually going to parse any data with
+                # our new offset
+                if not data[offset:length]:
+                    return 0
 
         # Actually parse the chunk of data we've been given. The return value
         # will be how much data was actually parsed.

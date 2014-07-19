@@ -170,3 +170,21 @@ class TestHTTPParser:
         parser.parse(b"GET / HTTP/1.1\r\nFoo: Bar    \r\n\r\n")
 
         assert parser.headers == [(b"Foo", b"Bar")]
+
+    def test_parser_accepts_extraneous_newlines(self):
+        """
+        RFC 7230 Section 3.5 states:
+
+        In the interest of robustness, a server that is expecting to receive
+        and parse a request-line SHOULD ignore at least one empty line (CRLF)
+        received prior to the request-line.
+        """
+        parser = HTTPParser()
+        parser.parse(b"\r\n\r\n")
+        parser.parse(b"\r\n\nGET / HTTP/1.1\r\n\r\n")
+
+        assert parser.http_version == b"HTTP/1.1"
+        assert parser.method == b"GET"
+        assert parser.path == b"/"
+        assert parser.query is None
+        assert parser.headers == []
