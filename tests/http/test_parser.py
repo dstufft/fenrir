@@ -153,3 +153,20 @@ class TestHTTPParser:
 
         with pytest.raises(ParserError):
             parser.parse(b"GET / HTTP/1.1\r\nFoo : Bar\r\n\r\n")
+
+    def test_header_values_ignore_leading_trailing_whitespace(self):
+        """
+        RFC 7320 Section 3.2.4 states:
+
+        A field value might be preceded and/or followed by optional whitespace
+        (OWS); a single SP preceding the field-value is preferred for
+        consistent readability by humans. The field value does not include any
+        leading or trailing whitespace: OWS occurring before the first
+        non-whitespace octet of the field value or after the last
+        non-whitespace octet of the field value ought to be excluded by parsers
+        when extracting the field value from a header field.
+        """
+        parser = HTTPParser()
+        parser.parse(b"GET / HTTP/1.1\r\nFoo: Bar    \r\n\r\n")
+
+        assert parser.headers == [(b"Foo", b"Bar")]
