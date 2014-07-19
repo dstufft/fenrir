@@ -8,6 +8,9 @@ and this code has been forked and does not match the upstream code any longer.
 Changes
 -------
 
+* Remove the ``#include <dbg.h>`` to enable compilation without the rest of the
+  Mongrel2 code base.
+
 
 License
 -------
