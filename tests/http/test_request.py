@@ -111,6 +111,19 @@ class TestRequest:
                 None,
             )
 
+    def test_deduplicates_content_length(self):
+        request = Request(
+            b"HTTP/1.1", b"GET", b"/", b"q=wat",
+            [
+                (b"Host", b"example.com"),
+                (b"Content-Length", b"0"),
+                (b"Content-Length", b"0"),
+            ],
+            None,
+        )
+
+        assert request.headers[b"Content-Length"] == [b"0"]
+
     def test_params(self):
         request = Request(
             b"HTTP/1.1", b"GET", b"/", b"q=wat",

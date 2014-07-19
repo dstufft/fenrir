@@ -88,6 +88,20 @@ class Request:
             if not all([cl >= 0 for cl in content_lengths]):
                 raise BadRequest
 
+            # De-duplicate extra values of Content-Length into a single value.
+            self.headers = Headers(
+                itertools.chain.from_iterable(
+                    [
+                        (
+                            [(k, i) for i in v]
+                            if k.lower() != b"content-length"
+                            else [(k, v[0])]
+                        )
+                        for k, v in self.headers.items()
+                    ]
+                )
+            )
+
         # RFC 7230 Section 5.4 - Ensure Host Header
         # HTTP/1.1 mandates the existence of a Host header on all requests,
         # while HTTP/1.0 does not, however due to the critical nature of
