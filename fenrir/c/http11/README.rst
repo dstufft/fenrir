@@ -10,6 +10,7 @@ Changes
 
 * Remove the ``#include <dbg.h>`` to enable compilation without the rest of the
   Mongrel2 code base.
+* Fixes for C90, namely ``-Werror=declaration-after-statement``.
 
 
 License
