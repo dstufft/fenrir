@@ -101,7 +101,7 @@ class HTTPParser:
         # We need to get the field name and the value from our buffers so that
         # we can use that data as our headers.
         field = http11.ffi.buffer(field, flen)[:]
-        value = http11.ffi.buffer(value, vlen)[:].strip()
+        value = http11.ffi.buffer(value, vlen)[:]
 
         # Actually add the parsed value to our stored headers
         self.headers.append((field, value))

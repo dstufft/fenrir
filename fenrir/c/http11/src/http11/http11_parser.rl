@@ -226,15 +226,16 @@
                    | "{" | "}" | " " | "\t"
                    ) ;
 
+  ows = (" " | "\t") ;
   lws = CRLF? (" " | "\t")+ ;
   token = ascii -- ( HTTP_CTL | HTTP_separator ) ;
   content = ((any -- HTTP_CTL) | lws);
 
   field_name = ( token )+ >start_field %write_field;
 
-  field_value = content* >start_value %write_value;
+  field_value = (content* (content -- ows)) >start_value %write_value;
 
-  message_header = field_name ":" lws* field_value :> CRLF;
+  message_header = field_name ":" lws* field_value ows* :> CRLF;
 
   Request = Request_Line ( message_header )* ( CRLF );
 
