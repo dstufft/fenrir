@@ -35,8 +35,6 @@ CDEF = """
         size_t field_start;
         size_t field_len;
         size_t query_start;
-        int xml_sent;
-        int json_sent;
 
         void *data;
 
