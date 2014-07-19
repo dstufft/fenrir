@@ -89,10 +89,12 @@ int http_parser_init(http_parser *parser) {
 /** exec **/
 size_t http_parser_execute(http_parser *parser, const char *buffer, size_t len, size_t off)
 {
+  const char *p, *pe;
+  int cs;
+
   if(len == 0) return 0;
 
-  const char *p, *pe;
-  int cs = parser->cs;
+  cs = parser->cs;
 
   assert(off <= len && "offset past end of buffer");
 
@@ -102,7 +104,7 @@ size_t http_parser_execute(http_parser *parser, const char *buffer, size_t len, 
   assert(pe - p == (int)len - (int)off && "pointers aren't same distance");
 
 
-#line 106 "fenrir/c/http11/src/http11/http11_parser.c"
+#line 108 "fenrir/c/http11/src/http11/http11_parser.c"
 	{
 	if ( p == pe )
 		goto _test_eof;
@@ -130,7 +132,7 @@ st2:
 	if ( ++p == pe )
 		goto _test_eof2;
 case 2:
-#line 134 "fenrir/c/http11/src/http11/http11_parser.c"
+#line 136 "fenrir/c/http11/src/http11/http11_parser.c"
 	if ( (*p) == 32 )
 		goto tr4;
 	if ( (*p) > 57 ) {
@@ -150,7 +152,7 @@ st3:
 	if ( ++p == pe )
 		goto _test_eof3;
 case 3:
-#line 154 "fenrir/c/http11/src/http11/http11_parser.c"
+#line 156 "fenrir/c/http11/src/http11/http11_parser.c"
 	switch( (*p) ) {
 		case 32: goto tr6;
 		case 33: goto tr7;
@@ -245,7 +247,7 @@ st4:
 	if ( ++p == pe )
 		goto _test_eof4;
 case 4:
-#line 249 "fenrir/c/http11/src/http11/http11_parser.c"
+#line 251 "fenrir/c/http11/src/http11/http11_parser.c"
 	if ( (*p) == 72 )
 		goto tr13;
 	goto st0;
@@ -257,7 +259,7 @@ st5:
 	if ( ++p == pe )
 		goto _test_eof5;
 case 5:
-#line 261 "fenrir/c/http11/src/http11/http11_parser.c"
+#line 263 "fenrir/c/http11/src/http11/http11_parser.c"
 	if ( (*p) == 84 )
 		goto st6;
 	goto st0;
@@ -341,7 +343,7 @@ st13:
 	if ( ++p == pe )
 		goto _test_eof13;
 case 13:
-#line 345 "fenrir/c/http11/src/http11/http11_parser.c"
+#line 347 "fenrir/c/http11/src/http11/http11_parser.c"
 	switch( (*p) ) {
 		case 10: goto tr24;
 		case 13: goto tr25;
@@ -381,7 +383,7 @@ st14:
 	if ( ++p == pe )
 		goto _test_eof14;
 case 14:
-#line 385 "fenrir/c/http11/src/http11/http11_parser.c"
+#line 387 "fenrir/c/http11/src/http11/http11_parser.c"
 	switch( (*p) ) {
 		case 33: goto st14;
 		case 58: goto tr27;
@@ -426,7 +428,7 @@ st15:
 	if ( ++p == pe )
 		goto _test_eof15;
 case 15:
-#line 430 "fenrir/c/http11/src/http11/http11_parser.c"
+#line 432 "fenrir/c/http11/src/http11/http11_parser.c"
 	switch( (*p) ) {
 		case 0: goto st0;
 		case 9: goto tr29;
@@ -444,7 +446,7 @@ st16:
 	if ( ++p == pe )
 		goto _test_eof16;
 case 16:
-#line 448 "fenrir/c/http11/src/http11/http11_parser.c"
+#line 450 "fenrir/c/http11/src/http11/http11_parser.c"
 	switch( (*p) ) {
 		case 0: goto st0;
 		case 10: goto tr33;
@@ -481,7 +483,7 @@ st17:
 	if ( ++p == pe )
 		goto _test_eof17;
 case 17:
-#line 485 "fenrir/c/http11/src/http11/http11_parser.c"
+#line 487 "fenrir/c/http11/src/http11/http11_parser.c"
 	if ( (*p) == 10 )
 		goto st13;
 	goto st0;
@@ -525,7 +527,7 @@ st348:
 	if ( ++p == pe )
 		goto _test_eof348;
 case 348:
-#line 529 "fenrir/c/http11/src/http11/http11_parser.c"
+#line 531 "fenrir/c/http11/src/http11/http11_parser.c"
 	switch( (*p) ) {
 		case 33: goto st14;
 		case 58: goto tr27;
@@ -564,7 +566,7 @@ st18:
 	if ( ++p == pe )
 		goto _test_eof18;
 case 18:
-#line 568 "fenrir/c/http11/src/http11/http11_parser.c"
+#line 570 "fenrir/c/http11/src/http11/http11_parser.c"
 	switch( (*p) ) {
 		case 10: goto tr36;
 		case 33: goto st14;
@@ -604,7 +606,7 @@ st19:
 	if ( ++p == pe )
 		goto _test_eof19;
 case 19:
-#line 608 "fenrir/c/http11/src/http11/http11_parser.c"
+#line 610 "fenrir/c/http11/src/http11/http11_parser.c"
 	switch( (*p) ) {
 		case 32: goto tr37;
 		case 33: goto st19;
@@ -682,7 +684,7 @@ st20:
 	if ( ++p == pe )
 		goto _test_eof20;
 case 20:
-#line 686 "fenrir/c/http11/src/http11/http11_parser.c"
+#line 688 "fenrir/c/http11/src/http11/http11_parser.c"
 	switch( (*p) ) {
 		case 32: goto tr43;
 		case 33: goto tr44;
@@ -708,7 +710,7 @@ st21:
 	if ( ++p == pe )
 		goto _test_eof21;
 case 21:
-#line 712 "fenrir/c/http11/src/http11/http11_parser.c"
+#line 714 "fenrir/c/http11/src/http11/http11_parser.c"
 	switch( (*p) ) {
 		case 32: goto tr46;
 		case 33: goto st21;
@@ -734,7 +736,7 @@ st22:
 	if ( ++p == pe )
 		goto _test_eof22;
 case 22:
-#line 738 "fenrir/c/http11/src/http11/http11_parser.c"
+#line 740 "fenrir/c/http11/src/http11/http11_parser.c"
 	if ( (*p) < 65 ) {
 		if ( 48 <= (*p) && (*p) <= 57 )
 			goto st23;
@@ -765,7 +767,7 @@ st24:
 	if ( ++p == pe )
 		goto _test_eof24;
 case 24:
-#line 769 "fenrir/c/http11/src/http11/http11_parser.c"
+#line 771 "fenrir/c/http11/src/http11/http11_parser.c"
 	if ( (*p) < 65 ) {
 		if ( 48 <= (*p) && (*p) <= 57 )
 			goto st25;
@@ -796,7 +798,7 @@ st26:
 	if ( ++p == pe )
 		goto _test_eof26;
 case 26:
-#line 800 "fenrir/c/http11/src/http11/http11_parser.c"
+#line 802 "fenrir/c/http11/src/http11/http11_parser.c"
 	switch( (*p) ) {
 		case 32: goto tr37;
 		case 33: goto st26;
@@ -824,7 +826,7 @@ st27:
 	if ( ++p == pe )
 		goto _test_eof27;
 case 27:
-#line 828 "fenrir/c/http11/src/http11/http11_parser.c"
+#line 830 "fenrir/c/http11/src/http11/http11_parser.c"
 	if ( (*p) < 65 ) {
 		if ( 48 <= (*p) && (*p) <= 57 )
 			goto st28;
@@ -867,7 +869,7 @@ st29:
 	if ( ++p == pe )
 		goto _test_eof29;
 case 29:
-#line 871 "fenrir/c/http11/src/http11/http11_parser.c"
+#line 873 "fenrir/c/http11/src/http11/http11_parser.c"
 	switch( (*p) ) {
 		case 32: goto tr53;
 		case 33: goto tr54;
@@ -894,7 +896,7 @@ st30:
 	if ( ++p == pe )
 		goto _test_eof30;
 case 30:
-#line 898 "fenrir/c/http11/src/http11/http11_parser.c"
+#line 900 "fenrir/c/http11/src/http11/http11_parser.c"
 	switch( (*p) ) {
 		case 32: goto tr57;
 		case 33: goto st30;
@@ -921,7 +923,7 @@ st31:
 	if ( ++p == pe )
 		goto _test_eof31;
 case 31:
-#line 925 "fenrir/c/http11/src/http11/http11_parser.c"
+#line 927 "fenrir/c/http11/src/http11/http11_parser.c"
 	if ( (*p) < 65 ) {
 		if ( 48 <= (*p) && (*p) <= 57 )
 			goto st32;
@@ -952,7 +954,7 @@ st33:
 	if ( ++p == pe )
 		goto _test_eof33;
 case 33:
-#line 956 "fenrir/c/http11/src/http11/http11_parser.c"
+#line 958 "fenrir/c/http11/src/http11/http11_parser.c"
 	switch( (*p) ) {
 		case 32: goto tr37;
 		case 33: goto st26;
@@ -2984,7 +2986,7 @@ st173:
 	if ( ++p == pe )
 		goto _test_eof173;
 case 173:
-#line 2988 "fenrir/c/http11/src/http11/http11_parser.c"
+#line 2990 "fenrir/c/http11/src/http11/http11_parser.c"
 	switch( (*p) ) {
 		case 32: goto tr37;
 		case 33: goto st19;
@@ -3267,7 +3269,7 @@ st194:
 	if ( ++p == pe )
 		goto _test_eof194;
 case 194:
-#line 3271 "fenrir/c/http11/src/http11/http11_parser.c"
+#line 3273 "fenrir/c/http11/src/http11/http11_parser.c"
 	if ( (*p) < 48 ) {
 		if ( 45 <= (*p) && (*p) <= 46 )
 			goto st195;
@@ -3312,7 +3314,7 @@ st196:
 	if ( ++p == pe )
 		goto _test_eof196;
 case 196:
-#line 3316 "fenrir/c/http11/src/http11/http11_parser.c"
+#line 3318 "fenrir/c/http11/src/http11/http11_parser.c"
 	if ( (*p) == 62 )
 		goto st197;
 	goto st196;
@@ -3371,7 +3373,7 @@ st349:
 	if ( ++p == pe )
 		goto _test_eof349;
 case 349:
-#line 3375 "fenrir/c/http11/src/http11/http11_parser.c"
+#line 3377 "fenrir/c/http11/src/http11/http11_parser.c"
 	goto st0;
 tr3:
 #line 52 "fenrir/c/http11/src/http11/http11_parser.rl"
@@ -3381,7 +3383,7 @@ st198:
 	if ( ++p == pe )
 		goto _test_eof198;
 case 198:
-#line 3385 "fenrir/c/http11/src/http11/http11_parser.c"
+#line 3387 "fenrir/c/http11/src/http11/http11_parser.c"
 	switch( (*p) ) {
 		case 32: goto tr228;
 		case 33: goto st202;
@@ -3412,7 +3414,7 @@ st199:
 	if ( ++p == pe )
 		goto _test_eof199;
 case 199:
-#line 3416 "fenrir/c/http11/src/http11/http11_parser.c"
+#line 3418 "fenrir/c/http11/src/http11/http11_parser.c"
 	if ( (*p) == 123 )
 		goto tr232;
 	goto st0;
@@ -3424,7 +3426,7 @@ st200:
 	if ( ++p == pe )
 		goto _test_eof200;
 case 200:
-#line 3428 "fenrir/c/http11/src/http11/http11_parser.c"
+#line 3430 "fenrir/c/http11/src/http11/http11_parser.c"
 	if ( (*p) == 125 )
 		goto st201;
 	goto st200;
@@ -5898,7 +5900,7 @@ case 347:
 	_out: {}
 	}
 
-#line 291 "fenrir/c/http11/src/http11/http11_parser.rl"
+#line 293 "fenrir/c/http11/src/http11/http11_parser.rl"
 
   assert(p <= pe && "Buffer overflow after parsing.");
 
