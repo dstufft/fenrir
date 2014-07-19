@@ -9,6 +9,7 @@ include fenrir/c/http11/README.rst
 recursive-include examples *.py
 recursive-include fenrir/c/http11/src *.h *.c *.rl
 recursive-include tests *.py
+recursive-include tests/c/http11/canned *
 
 exclude tox.ini
 exclude .travis.yml
