@@ -122,7 +122,7 @@ class TestHTTPParser:
         with pytest.raises(ValueError):
             parser.parse(msg, 10000)
 
-    def test_bad_request_improperly_escaped_urls(self):
+    def test_parser_error_improperly_escaped_urls(self):
         """
         RFC 7230 Section 3.1.1 states:
 
